@@ -111,6 +111,12 @@ SQUIDCONF
 
 # Add proxy user
 add_proxy_user() {
+    # Create password file if not exists
+    if [ ! -f "$SQUID_PASSWD" ]; then
+        sudo touch "$SQUID_PASSWD"
+        sudo chown proxy:proxy "$SQUID_PASSWD"
+        sudo chmod 640 "$SQUID_PASSWD"
+    fi
     local username=$1
     local password=$2
     local days=$3
