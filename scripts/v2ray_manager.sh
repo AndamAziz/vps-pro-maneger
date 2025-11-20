@@ -1,7 +1,7 @@
 #!/bin/bash
 ################################################################################
-# V2Ray VPN User Management Script
-# Manages V2Ray users with VLESS/VMess protocols
+# V2Ray VPN Management - Complete Rewrite
+# Supports: VLESS, VMess, Trojan with TLS + WebSocket
 ################################################################################
 
 set -e
@@ -14,20 +14,18 @@ BLUE='\033[0;34m'
 NC='\033[0m'
 
 DB_NAME="vps_manager"
-V2RAY_CONFIG="/usr/local/etc/v2ray/config.json"
 DOMAIN="v2ray.kurdcloud.xyz"
+V2RAY_CONFIG="/usr/local/etc/v2ray/config.json"
 CERT_DIR="/etc/letsencrypt/live/$DOMAIN"
 
-# Database initialization
+# Initialize database
 init_v2ray_database() {
-    sudo mysql << EOF
-USE $DB_NAME;
-
+    sudo mysql $DB_NAME << 'EOF'
 CREATE TABLE IF NOT EXISTS v2ray_users (
     id INT AUTO_INCREMENT PRIMARY KEY,
     username VARCHAR(50) UNIQUE NOT NULL,
     uuid VARCHAR(36) UNIQUE NOT NULL,
-    protocol ENUM('vless', 'vmess') DEFAULT 'vless',
+    protocol ENUM('vless', 'vmess', 'trojan') DEFAULT 'vless',
     port INT DEFAULT 443,
     created_date DATETIME DEFAULT CURRENT_TIMESTAMP,
     expiry_date DATE NOT NULL,
@@ -46,20 +44,60 @@ EOF
 install_v2ray() {
     echo -e "${CYAN}Installing V2Ray...${NC}"
     
-    # Download and install
+    # Install V2Ray
     bash <(curl -L https://raw.githubusercontent.com/v2fly/fhs-install-v2ray/master/install-release.sh)
     
-    # Create config directory
+    # Create directories
     mkdir -p /usr/local/etc/v2ray
+    mkdir -p /var/log/v2ray
     
     echo -e "${GREEN}✓${NC} V2Ray installed"
 }
 
-# Configure V2Ray base
-configure_v2ray_base() {
-    echo -e "${CYAN}Configuring V2Ray base...${NC}"
+# Setup SSL Certificate
+setup_ssl() {
+    echo -e "${CYAN}Setting up SSL for $DOMAIN...${NC}"
     
-    cat > $V2RAY_CONFIG << 'V2RAYCONF'
+    # Stop services that use port 80
+    systemctl stop nginx 2>/dev/null || true
+    systemctl stop apache2 2>/dev/null || true
+    
+    # Install certbot
+    apt-get update -qq
+    apt-get install -y -qq certbot
+    
+    # Get certificate
+    certbot certonly --standalone \
+        -d $DOMAIN \
+        --non-interactive \
+        --agree-tos \
+        --email admin@$DOMAIN \
+        --preferred-challenges http
+    
+    if [ -f "$CERT_DIR/fullchain.pem" ]; then
+        echo -e "${GREEN}✓${NC} SSL certificate obtained"
+        
+        # Setup auto-renewal
+        (crontab -l 2>/dev/null; echo "0 0 1 * * certbot renew --quiet --post-hook 'systemctl restart v2ray'") | crontab -
+        
+        return 0
+    else
+        echo -e "${RED}✗${NC} Failed to obtain SSL certificate"
+        return 1
+    fi
+}
+
+# Configure V2Ray with all protocols
+configure_v2ray_full() {
+    echo -e "${CYAN}Configuring V2Ray with VLESS, VMess, and Trojan...${NC}"
+    
+    # Check SSL
+    if [ ! -f "$CERT_DIR/fullchain.pem" ]; then
+        echo -e "${YELLOW}SSL certificate not found. Setting up...${NC}"
+        setup_ssl || return 1
+    fi
+    
+    cat > $V2RAY_CONFIG << V2CONFIG
 {
   "log": {
     "loglevel": "warning",
@@ -72,47 +110,264 @@ configure_v2ray_base() {
       "protocol": "vless",
       "settings": {
         "clients": [],
+        "decryption": "none",
+        "fallbacks": [
+          {
+            "dest": 8001
+          }
+        ]
+      },
+      "streamSettings": {
+        "network": "tcp",
+        "security": "tls",
+        "tlsSettings": {
+          "serverName": "$DOMAIN",
+          "alpn": ["http/1.1"],
+          "certificates": [
+            {
+              "certificateFile": "$CERT_DIR/fullchain.pem",
+              "keyFile": "$CERT_DIR/privkey.pem"
+            }
+          ]
+        }
+      },
+      "tag": "vless_tls"
+    },
+    {
+      "port": 443,
+      "listen": "127.0.0.1",
+      "protocol": "vless",
+      "settings": {
+        "clients": [],
         "decryption": "none"
       },
       "streamSettings": {
         "network": "ws",
-        "security": "tls",
         "wsSettings": {
-          "path": "/v2ray"
-        },
-        "tlsSettings": {
-          "serverName": "v2ray.kurdcloud.xyz",
-          "certificates": [
-            {
-              "certificateFile": "/etc/letsencrypt/live/v2ray.kurdcloud.xyz/fullchain.pem",
-              "keyFile": "/etc/letsencrypt/live/v2ray.kurdcloud.xyz/privkey.pem"
-            }
-          ]
+          "path": "/vless"
         }
-      }
+      },
+      "tag": "vless_ws"
+    },
+    {
+      "port": 8001,
+      "listen": "127.0.0.1",
+      "protocol": "vmess",
+      "settings": {
+        "clients": []
+      },
+      "streamSettings": {
+        "network": "ws",
+        "wsSettings": {
+          "path": "/vmess"
+        }
+      },
+      "tag": "vmess_ws"
+    },
+    {
+      "port": 8002,
+      "listen": "127.0.0.1",
+      "protocol": "trojan",
+      "settings": {
+        "clients": []
+      },
+      "streamSettings": {
+        "network": "tcp",
+        "security": "none"
+      },
+      "tag": "trojan_tcp"
     }
   ],
   "outbounds": [
     {
       "protocol": "freedom",
       "settings": {}
+    },
+    {
+      "protocol": "blackhole",
+      "settings": {},
+      "tag": "blocked"
     }
-  ]
+  ],
+  "routing": {
+    "rules": [
+      {
+        "type": "field",
+        "ip": ["geoip:private"],
+        "outboundTag": "blocked"
+      }
+    ]
+  }
 }
-V2RAYCONF
+V2CONFIG
 
-    # Create log directory
-    mkdir -p /var/log/v2ray
-    
     # Set permissions
     chown -R nobody:nogroup /var/log/v2ray
+    chmod 644 $V2RAY_CONFIG
     
-    echo -e "${GREEN}✓${NC} V2Ray base configuration created"
+    # Test config
+    /usr/local/bin/v2ray test -config=$V2RAY_CONFIG
+    
+    if [ $? -eq 0 ]; then
+        # Enable and start
+        systemctl enable v2ray
+        systemctl restart v2ray
+        
+        echo -e "${GREEN}✓${NC} V2Ray configured with all protocols"
+        return 0
+    else
+        echo -e "${RED}✗${NC} V2Ray configuration test failed"
+        return 1
+    fi
 }
 
 # Generate UUID
 generate_uuid() {
     cat /proc/sys/kernel/random/uuid
+}
+
+# Add user to V2Ray config
+add_user_to_config() {
+    local uuid=$1
+    local protocol=$2
+    local email=$3
+    
+    # Install jq if not present
+    command -v jq >/dev/null 2>&1 || apt-get install -y -qq jq
+    
+    case $protocol in
+        vless)
+            # Add to VLESS
+            jq ".inbounds[0].settings.clients += [{\"id\": \"$uuid\", \"email\": \"$email\", \"level\": 0}]" \
+                $V2RAY_CONFIG > ${V2RAY_CONFIG}.tmp
+            mv ${V2RAY_CONFIG}.tmp $V2RAY_CONFIG
+            
+            jq ".inbounds[1].settings.clients += [{\"id\": \"$uuid\", \"email\": \"$email\", \"level\": 0}]" \
+                $V2RAY_CONFIG > ${V2RAY_CONFIG}.tmp
+            mv ${V2RAY_CONFIG}.tmp $V2RAY_CONFIG
+            ;;
+        vmess)
+            # Add to VMess
+            jq ".inbounds[2].settings.clients += [{\"id\": \"$uuid\", \"email\": \"$email\", \"alterId\": 0}]" \
+                $V2RAY_CONFIG > ${V2RAY_CONFIG}.tmp
+            mv ${V2RAY_CONFIG}.tmp $V2RAY_CONFIG
+            ;;
+        trojan)
+            # Add to Trojan
+            jq ".inbounds[3].settings.clients += [{\"password\": \"$uuid\", \"email\": \"$email\"}]" \
+                $V2RAY_CONFIG > ${V2RAY_CONFIG}.tmp
+            mv ${V2RAY_CONFIG}.tmp $V2RAY_CONFIG
+            ;;
+    esac
+}
+
+# Remove user from config
+remove_user_from_config() {
+    local uuid=$1
+    local protocol=$2
+    
+    case $protocol in
+        vless)
+            jq ".inbounds[0].settings.clients = [.inbounds[0].settings.clients[] | select(.id != \"$uuid\")]" \
+                $V2RAY_CONFIG > ${V2RAY_CONFIG}.tmp
+            mv ${V2RAY_CONFIG}.tmp $V2RAY_CONFIG
+            
+            jq ".inbounds[1].settings.clients = [.inbounds[1].settings.clients[] | select(.id != \"$uuid\")]" \
+                $V2RAY_CONFIG > ${V2RAY_CONFIG}.tmp
+            mv ${V2RAY_CONFIG}.tmp $V2RAY_CONFIG
+            ;;
+        vmess)
+            jq ".inbounds[2].settings.clients = [.inbounds[2].settings.clients[] | select(.id != \"$uuid\")]" \
+                $V2RAY_CONFIG > ${V2RAY_CONFIG}.tmp
+            mv ${V2RAY_CONFIG}.tmp $V2RAY_CONFIG
+            ;;
+        trojan)
+            jq ".inbounds[3].settings.clients = [.inbounds[3].settings.clients[] | select(.password != \"$uuid\")]" \
+                $V2RAY_CONFIG > ${V2RAY_CONFIG}.tmp
+            mv ${V2RAY_CONFIG}.tmp $V2RAY_CONFIG
+            ;;
+    esac
+}
+
+# Generate links and QR codes
+generate_links() {
+    local username=$1
+    local uuid=$2
+    local protocol=$3
+    
+    echo -e "${CYAN}═══════════════════════════════════════════════════${NC}"
+    echo -e "${YELLOW}Username:${NC} $username"
+    echo -e "${YELLOW}UUID:${NC} $uuid"
+    echo -e "${YELLOW}Protocol:${NC} $protocol"
+    echo -e "${CYAN}═══════════════════════════════════════════════════${NC}"
+    echo ""
+    
+    case $protocol in
+        vless)
+            # VLESS TLS
+            local vless_tls="vless://${uuid}@${DOMAIN}:443?encryption=none&security=tls&sni=${DOMAIN}&type=tcp&headerType=none#${username}_vless_tls"
+            
+            # VLESS WS
+            local vless_ws="vless://${uuid}@${DOMAIN}:443?encryption=none&security=tls&sni=${DOMAIN}&type=ws&path=%2Fvless#${username}_vless_ws"
+            
+            echo -e "${GREEN}VLESS TLS:${NC}"
+            echo "$vless_tls"
+            echo ""
+            command -v qrencode >/dev/null 2>&1 && qrencode -t ANSIUTF8 "$vless_tls"
+            echo ""
+            
+            echo -e "${GREEN}VLESS WebSocket:${NC}"
+            echo "$vless_ws"
+            echo ""
+            command -v qrencode >/dev/null 2>&1 && qrencode -t ANSIUTF8 "$vless_ws"
+            ;;
+            
+        vmess)
+            # VMess config
+            local vmess_json=$(cat <<VMESS
+{
+  "v": "2",
+  "ps": "${username}_vmess",
+  "add": "${DOMAIN}",
+  "port": "443",
+  "id": "${uuid}",
+  "aid": "0",
+  "net": "ws",
+  "type": "none",
+  "host": "${DOMAIN}",
+  "path": "/vmess",
+  "tls": "tls",
+  "sni": "${DOMAIN}"
+}
+VMESS
+)
+            local vmess_link="vmess://$(echo -n "$vmess_json" | base64 -w 0)"
+            
+            echo -e "${GREEN}VMess WebSocket:${NC}"
+            echo "$vmess_link"
+            echo ""
+            command -v qrencode >/dev/null 2>&1 && qrencode -t ANSIUTF8 "$vmess_link"
+            ;;
+            
+        trojan)
+            local trojan_link="trojan://${uuid}@${DOMAIN}:443?security=tls&sni=${DOMAIN}&type=tcp#${username}_trojan"
+            
+            echo -e "${GREEN}Trojan:${NC}"
+            echo "$trojan_link"
+            echo ""
+            command -v qrencode >/dev/null 2>&1 && qrencode -t ANSIUTF8 "$trojan_link"
+            ;;
+    esac
+    
+    echo ""
+    echo -e "${CYAN}Client Configuration:${NC}"
+    echo "  Server: $DOMAIN"
+    echo "  Port: 443"
+    echo "  UUID/Password: $uuid"
+    echo "  Protocol: $protocol"
+    echo "  Security: TLS"
+    echo "  SNI: $DOMAIN"
+    echo ""
 }
 
 # Add V2Ray user
@@ -127,35 +382,24 @@ add_v2ray_user() {
         return 1
     fi
     
+    # Check if V2Ray is configured
+    if [ ! -f "$V2RAY_CONFIG" ]; then
+        echo -e "${YELLOW}V2Ray not configured. Configuring now...${NC}"
+        configure_v2ray_full || return 1
+    fi
+    
     # Generate UUID
     local uuid=$(generate_uuid)
+    local email="${username}@${DOMAIN}"
     
     # Calculate expiry
     local expiry_date=$(date -d "+$days days" +%Y-%m-%d)
     
-    # Read current config
-    local config=$(cat $V2RAY_CONFIG)
-    
-    # Add user to clients array
-    local new_client=$(cat << CLIENTJSON
-{
-  "id": "$uuid",
-  "email": "$username@$DOMAIN"
-}
-CLIENTJSON
-)
-    
-    # Use jq to add client (install if not present)
-    if ! command -v jq &> /dev/null; then
-        apt-get install -y -qq jq
-    fi
-    
-    # Add client
-    jq ".inbounds[0].settings.clients += [$new_client]" $V2RAY_CONFIG > ${V2RAY_CONFIG}.tmp
-    mv ${V2RAY_CONFIG}.tmp $V2RAY_CONFIG
+    # Add to config
+    add_user_to_config "$uuid" "$protocol" "$email"
     
     # Add to database
-    sudo mysql -D $DB_NAME << EOF
+    sudo mysql $DB_NAME << EOF
 INSERT INTO v2ray_users (username, uuid, protocol, expiry_date, traffic_limit_gb)
 VALUES ('$username', '$uuid', '$protocol', '$expiry_date', $traffic_gb);
 EOF
@@ -163,50 +407,11 @@ EOF
     # Restart V2Ray
     systemctl restart v2ray
     
-    # Generate connection info
-    generate_connection_info "$username" "$uuid" "$protocol"
-}
-
-# Generate connection info
-generate_connection_info() {
-    local username=$1
-    local uuid=$2
-    local protocol=$3
-    
-    local server_ip=$(curl -s ifconfig.me)
-    
-    echo -e "${GREEN}✓${NC} V2Ray user created:"
-    echo ""
-    echo -e "${CYAN}═══════════════════════════════════════════════════${NC}"
-    echo -e "${YELLOW}Username:${NC} $username"
-    echo -e "${YELLOW}UUID:${NC} $uuid"
-    echo -e "${YELLOW}Protocol:${NC} $protocol"
-    echo -e "${CYAN}═══════════════════════════════════════════════════${NC}"
+    echo -e "${GREEN}✓${NC} V2Ray user created"
     echo ""
     
-    if [[ "$protocol" == "vless" ]]; then
-        local vless_link="vless://${uuid}@${DOMAIN}:443?encryption=none&security=tls&sni=${DOMAIN}&type=ws&path=%2Fv2ray#${username}"
-        echo -e "${YELLOW}VLESS Link:${NC}"
-        echo "$vless_link"
-        echo ""
-        
-        # Generate QR code if qrencode is available
-        if command -v qrencode &> /dev/null; then
-            qrencode -t ANSIUTF8 "$vless_link"
-        fi
-    fi
-    
-    echo ""
-    echo -e "${CYAN}Client Configuration:${NC}"
-    echo "  Address: $DOMAIN"
-    echo "  Port: 443"
-    echo "  UUID: $uuid"
-    echo "  Protocol: $protocol"
-    echo "  Network: WebSocket"
-    echo "  Path: /v2ray"
-    echo "  Security: TLS"
-    echo "  SNI: $DOMAIN"
-    echo ""
+    # Show links
+    generate_links "$username" "$uuid" "$protocol"
 }
 
 # Delete V2Ray user
@@ -218,24 +423,25 @@ delete_v2ray_user() {
         return 1
     fi
     
-    # Get UUID from database
-    local uuid=$(sudo mysql -D $DB_NAME -sN << EOF
-SELECT uuid FROM v2ray_users WHERE username='$username';
+    # Get user info
+    local user_info=$(sudo mysql $DB_NAME -sN << EOF
+SELECT uuid, protocol FROM v2ray_users WHERE username='$username' AND status='active';
 EOF
 )
     
-    if [[ -z "$uuid" ]]; then
-        echo -e "${RED}✗${NC} User not found"
+    if [[ -z "$user_info" ]]; then
+        echo -e "${RED}✗${NC} User not found or already disabled"
         return 1
     fi
     
-    # Remove from V2Ray config
-    jq ".inbounds[0].settings.clients = [.inbounds[0].settings.clients[] | select(.id != \"$uuid\")]" \
-        $V2RAY_CONFIG > ${V2RAY_CONFIG}.tmp
-    mv ${V2RAY_CONFIG}.tmp $V2RAY_CONFIG
+    local uuid=$(echo "$user_info" | awk '{print $1}')
+    local protocol=$(echo "$user_info" | awk '{print $2}')
+    
+    # Remove from config
+    remove_user_from_config "$uuid" "$protocol"
     
     # Update database
-    sudo mysql -D $DB_NAME << EOF
+    sudo mysql $DB_NAME << EOF
 UPDATE v2ray_users SET status='disabled' WHERE username='$username';
 EOF
     
@@ -245,11 +451,11 @@ EOF
     echo -e "${GREEN}✓${NC} User $username deleted"
 }
 
-# List V2Ray users
+# List users
 list_v2ray_users() {
     echo -e "${CYAN}V2Ray Users:${NC}"
     echo ""
-    sudo mysql -D $DB_NAME -t << EOF
+    sudo mysql $DB_NAME -t << 'EOF'
 SELECT 
     username,
     protocol,
@@ -272,38 +478,38 @@ show_user_info() {
         return 1
     fi
     
-    # Get user data
-    local user_data=$(sudo mysql -D $DB_NAME << EOF
-SELECT uuid, protocol FROM v2ray_users WHERE username='$username';
+    local user_info=$(sudo mysql $DB_NAME -sN << EOF
+SELECT uuid, protocol, status FROM v2ray_users WHERE username='$username';
 EOF
 )
     
-    if [[ -z "$user_data" ]]; then
+    if [[ -z "$user_info" ]]; then
         echo -e "${RED}✗${NC} User not found"
         return 1
     fi
     
-    local uuid=$(echo "$user_data" | tail -1 | awk '{print $1}')
-    local protocol=$(echo "$user_data" | tail -1 | awk '{print $2}')
+    local uuid=$(echo "$user_info" | awk '{print $1}')
+    local protocol=$(echo "$user_info" | awk '{print $2}')
+    local status=$(echo "$user_info" | awk '{print $3}')
     
     echo -e "${CYAN}V2Ray User Information: $username${NC}"
     echo ""
     
-    # From database
-    sudo mysql -D $DB_NAME -t << EOF
+    sudo mysql $DB_NAME -t << EOF
 SELECT * FROM v2ray_users WHERE username='$username';
 EOF
     
-    echo ""
-    generate_connection_info "$username" "$uuid" "$protocol"
+    if [[ "$status" == "active" ]]; then
+        echo ""
+        generate_links "$username" "$uuid" "$protocol"
+    fi
 }
 
 # Check expired users
 check_expired_users() {
-    echo -e "${CYAN}Checking for expired V2Ray users...${NC}"
+    echo -e "${CYAN}Checking for expired users...${NC}"
     
-    # Get expired users
-    local expired=$(sudo mysql -D $DB_NAME -sN << EOF
+    local expired=$(sudo mysql $DB_NAME -sN << EOF
 SELECT username FROM v2ray_users 
 WHERE expiry_date < CURDATE() AND status='active';
 EOF
@@ -314,61 +520,10 @@ EOF
         return
     fi
     
-    # Disable expired users
     while IFS= read -r username; do
         delete_v2ray_user "$username"
         echo -e "${YELLOW}✓${NC} Disabled expired user: $username"
     done <<< "$expired"
-}
-
-# Setup SSL certificate
-setup_ssl() {
-    echo -e "${CYAN}Setting up SSL certificate for $DOMAIN...${NC}"
-    
-    # Stop services that might use port 80
-    systemctl stop nginx 2>/dev/null || true
-    
-    # Install certbot if not present
-    if ! command -v certbot &> /dev/null; then
-        apt-get update -qq
-        apt-get install -y -qq certbot
-    fi
-    
-    # Get certificate
-    certbot certonly --standalone \
-        -d $DOMAIN \
-        --non-interactive \
-        --agree-tos \
-        --email admin@$DOMAIN \
-        --preferred-challenges http
-    
-    if [[ -f "$CERT_DIR/fullchain.pem" ]]; then
-        echo -e "${GREEN}✓${NC} SSL certificate obtained"
-        
-        # Setup auto-renewal
-        (crontab -l 2>/dev/null; echo "0 0 1 * * certbot renew --quiet && systemctl restart v2ray") | crontab -
-        
-        # Start nginx again
-        systemctl start nginx 2>/dev/null || true
-    else
-        echo -e "${RED}✗${NC} Failed to obtain SSL certificate"
-        return 1
-    fi
-}
-
-# Test V2Ray
-test_v2ray() {
-    echo -e "${CYAN}Testing V2Ray configuration...${NC}"
-    
-    # Test config
-    /usr/local/bin/v2ray test -config=$V2RAY_CONFIG
-    
-    # Check service status
-    if systemctl is-active --quiet v2ray; then
-        echo -e "${GREEN}✓${NC} V2Ray is running"
-    else
-        echo -e "${RED}✗${NC} V2Ray is not running"
-    fi
 }
 
 # Menu
@@ -377,14 +532,14 @@ show_menu() {
     echo -e "${CYAN}╔══════════════════════════════════════════════════════════════╗${NC}"
     echo -e "${CYAN}║          V2Ray VPN Management - VPS Manager Pro             ║${NC}"
     echo -e "${CYAN}╚══════════════════════════════════════════════════════════════╝${NC}\n"
-    echo -e "${GREEN}1.${NC} Add V2Ray User"
+    echo -e "${GREEN}1.${NC} Add V2Ray User (VLESS/VMess/Trojan)"
     echo -e "${GREEN}2.${NC} Delete V2Ray User"
     echo -e "${GREEN}3.${NC} List All Users"
-    echo -e "${GREEN}4.${NC} Show User Info (with QR)"
+    echo -e "${GREEN}4.${NC} Show User Info (with Links & QR)"
     echo -e "${GREEN}5.${NC} Check Expired Users"
     echo -e "${GREEN}6.${NC} Setup SSL Certificate"
-    echo -e "${GREEN}7.${NC} Test V2Ray"
-    echo -e "${GREEN}8.${NC} Configure V2Ray Base"
+    echo -e "${GREEN}7.${NC} Configure V2Ray (Full Setup)"
+    echo -e "${GREEN}8.${NC} Restart V2Ray"
     echo -e "${GREEN}9.${NC} Initialize Database"
     echo -e "${GREEN}0.${NC} Exit"
     echo ""
@@ -395,16 +550,8 @@ show_menu() {
 
 # Main
 main() {
-    # Check if V2Ray is installed
-    if ! command -v v2ray &> /dev/null; then
-        echo -e "${YELLOW}V2Ray not installed. Install now? (y/n)${NC}"
-        read -n 1 -r
-        echo
-        if [[ $REPLY =~ ^[Yy]$ ]]; then
-            install_v2ray
-            configure_v2ray_base
-        fi
-    fi
+    # Install qrencode for QR codes
+    command -v qrencode >/dev/null 2>&1 || apt-get install -y -qq qrencode
     
     while true; do
         show_menu
@@ -414,9 +561,21 @@ main() {
             1)
                 read -p "Username: " username
                 read -p "Days valid: " days
-                read -p "Protocol (vless/vmess) [vless]: " protocol
-                protocol=${protocol:-vless}
-                read -p "Traffic limit (GB, 0=unlimited): " traffic
+                echo "Select protocol:"
+                echo "  1. VLESS"
+                echo "  2. VMess"
+                echo "  3. Trojan"
+                read -p "Protocol [1]: " proto_choice
+                
+                case $proto_choice in
+                    2) protocol="vmess" ;;
+                    3) protocol="trojan" ;;
+                    *) protocol="vless" ;;
+                esac
+                
+                read -p "Traffic limit (GB, 0=unlimited) [0]: " traffic
+                traffic=${traffic:-0}
+                
                 add_v2ray_user "$username" "$days" "$protocol" "$traffic"
                 read -p "Press enter to continue..."
                 ;;
@@ -443,11 +602,12 @@ main() {
                 read -p "Press enter to continue..."
                 ;;
             7)
-                test_v2ray
+                configure_v2ray_full
                 read -p "Press enter to continue..."
                 ;;
             8)
-                configure_v2ray_base
+                systemctl restart v2ray
+                echo -e "${GREEN}✓${NC} V2Ray restarted"
                 read -p "Press enter to continue..."
                 ;;
             9)
@@ -466,7 +626,6 @@ main() {
     done
 }
 
-# If called directly
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
     main
 fi
