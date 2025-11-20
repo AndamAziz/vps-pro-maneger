@@ -9,11 +9,10 @@ NC='\033[0m'
 
 DB_NAME="vps_manager"
 EASYRSA_DIR="/etc/openvpn/easy-rsa"
-SERVER_IP=$(curl -s ifconfig.me)
+SERVER_IP=$(curl -s ifconfig.me 2>/dev/null || echo "87.106.64.47")
 DOMAIN="v2ray.kurdcloud.xyz"
 DOWNLOAD_DIR="/var/www/html/ovpn"
 
-# Init database
 init_openvpn_database() {
     sudo mysql $DB_NAME << 'EOF'
 CREATE TABLE IF NOT EXISTS openvpn_users (
@@ -30,7 +29,6 @@ EOF
     echo -e "${GREEN}✓${NC} OpenVPN database initialized"
 }
 
-# Create client
 create_client() {
     local username=$1
     local days=$2
@@ -38,13 +36,15 @@ create_client() {
     [[ -z "$username" || -z "$days" ]] && { echo -e "${RED}Usage: create_client <username> <days>${NC}"; return 1; }
     
     echo -e "${CYAN}Creating OpenVPN user: $username${NC}"
+    echo ""
     
     cd $EASYRSA_DIR
-    ./easyrsa build-client-full "$username" nopass >/dev/null 2>&1
+    
+    # Build client certificate with auto-yes
+    echo "yes" | ./easyrsa build-client-full "$username" nopass 2>&1 | grep -E "(Notice|Certificate created)"
     
     local expiry=$(date -d "+$days days" +%Y-%m-%d)
     
-    # Create download directory
     mkdir -p $DOWNLOAD_DIR
     
     # Generate UDP config
@@ -109,7 +109,6 @@ TCPCONFIG
 
     chmod 644 "$udp_file" "$tcp_file"
     
-    # Save to database
     local udp_link="http://$DOMAIN/ovpn/${username}-udp.ovpn"
     local tcp_link="http://$DOMAIN/ovpn/${username}-tcp.ovpn"
     
@@ -118,7 +117,8 @@ INSERT INTO openvpn_users (username, expiry_date, udp_config, tcp_config)
 VALUES ('$username', '$expiry', '$udp_link', '$tcp_link');
 EOF
     
-    echo -e "${GREEN}✓${NC} OpenVPN user created!"
+    echo ""
+    echo -e "${GREEN}✓ OpenVPN user created!${NC}"
     echo ""
     echo -e "${CYAN}╔══════════════════════════════════════════════════════════════╗${NC}"
     echo -e "${CYAN}║              OpenVPN Configuration Links                     ║${NC}"
@@ -139,14 +139,13 @@ EOF
     echo ""
 }
 
-# Delete client
 delete_client() {
     local username=$1
     [[ -z "$username" ]] && { echo -e "${RED}Usage: delete_client <username>${NC}"; return 1; }
     
     cd $EASYRSA_DIR
-    ./easyrsa revoke "$username" >/dev/null 2>&1
-    ./easyrsa gen-crl >/dev/null 2>&1
+    echo "yes" | ./easyrsa revoke "$username" 2>&1 | grep -E "(Notice|revoked)"
+    ./easyrsa gen-crl 2>&1 | grep -E "Notice"
     
     rm -f "$DOWNLOAD_DIR/${username}-udp.ovpn"
     rm -f "$DOWNLOAD_DIR/${username}-tcp.ovpn"
@@ -156,7 +155,6 @@ delete_client() {
     echo -e "${GREEN}✓${NC} User $username deleted"
 }
 
-# List clients
 list_clients() {
     echo -e "${CYAN}OpenVPN Users:${NC}"
     echo ""
@@ -167,7 +165,6 @@ FROM openvpn_users ORDER BY created_date DESC;
 EOF
 }
 
-# Show user info
 show_client_info() {
     local username=$1
     [[ -z "$username" ]] && { echo -e "${RED}Usage: show_client_info <username>${NC}"; return 1; }
@@ -194,7 +191,6 @@ show_client_info() {
     echo ""
 }
 
-# Check connections
 show_connections() {
     echo -e "${CYAN}Active OpenVPN Connections:${NC}"
     echo ""
@@ -205,7 +201,6 @@ show_connections() {
     [[ -f /var/log/openvpn/openvpn-status-tcp.log ]] && cat /var/log/openvpn/openvpn-status-tcp.log | grep "^CLIENT_LIST" || echo "No connections"
 }
 
-# Menu
 show_menu() {
     clear
     echo -e "${CYAN}╔══════════════════════════════════════════════════════════════╗${NC}"
@@ -225,7 +220,6 @@ show_menu() {
     echo ""
 }
 
-# Main
 main() {
     while true; do
         show_menu
