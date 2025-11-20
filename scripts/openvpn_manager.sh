@@ -25,6 +25,8 @@ CREATE TABLE IF NOT EXISTS openvpn_users (
     tcp_config VARCHAR(255),
     udp_proxy_config VARCHAR(255),
     tcp_proxy_config VARCHAR(255),
+    proxy_username VARCHAR(50),
+    proxy_password VARCHAR(50),
     INDEX(username), INDEX(status)
 );
 EOF
@@ -34,8 +36,10 @@ EOF
 create_client() {
     local username=$1
     local days=$2
+    local proxy_user=$3
+    local proxy_pass=$4
     
-    [[ -z "$username" || -z "$days" ]] && { echo -e "${RED}Usage: create_client <username> <days>${NC}"; return 1; }
+    [[ -z "$username" || -z "$days" ]] && { echo -e "${RED}Usage: create_client <username> <days> [proxy_user] [proxy_pass]${NC}"; return 1; }
     
     echo -e "${CYAN}Creating OpenVPN user: $username${NC}"
     echo ""
@@ -46,9 +50,7 @@ create_client() {
     local expiry=$(date -d "+$days days" +%Y-%m-%d)
     mkdir -p $DOWNLOAD_DIR
     
-    # ═══════════════════════════════════════════════════════════════
-    # UDP Config - Android Compatible
-    # ═══════════════════════════════════════════════════════════════
+    # Direct configs (no proxy)
     local udp_file="$DOWNLOAD_DIR/${username}-udp.ovpn"
     cat > "$udp_file" << UDPCONFIG
 client
@@ -75,9 +77,6 @@ $(cat /etc/openvpn/server/ta.key)
 key-direction 1
 UDPCONFIG
 
-    # ═══════════════════════════════════════════════════════════════
-    # TCP Config - Android Compatible
-    # ═══════════════════════════════════════════════════════════════
     local tcp_file="$DOWNLOAD_DIR/${username}-tcp.ovpn"
     cat > "$tcp_file" << TCPCONFIG
 client
@@ -104,16 +103,16 @@ $(cat /etc/openvpn/server/ta.key)
 key-direction 1
 TCPCONFIG
 
-    # ═══════════════════════════════════════════════════════════════
-    # UDP + Proxy Config - Android Compatible
-    # ═══════════════════════════════════════════════════════════════
-    local udp_proxy_file="$DOWNLOAD_DIR/${username}-udp-proxy.ovpn"
-    cat > "$udp_proxy_file" << UDPPROXYCONFIG
+    # Proxy configs with authentication
+    if [[ -n "$proxy_user" && -n "$proxy_pass" ]]; then
+        local udp_proxy_file="$DOWNLOAD_DIR/${username}-udp-proxy.ovpn"
+        cat > "$udp_proxy_file" << UDPPROXYCONFIG
 client
 dev tun
 proto udp
 remote $SERVER_IP 1194
 http-proxy $SERVER_IP 8080
+http-proxy-option CUSTOM-HEADER "Proxy-Authorization" "Basic $(echo -n "$proxy_user:$proxy_pass" | base64)"
 nobind
 remote-cert-tls server
 cipher AES-256-GCM
@@ -134,16 +133,14 @@ $(cat /etc/openvpn/server/ta.key)
 key-direction 1
 UDPPROXYCONFIG
 
-    # ═══════════════════════════════════════════════════════════════
-    # TCP + Proxy Config - Android Compatible
-    # ═══════════════════════════════════════════════════════════════
-    local tcp_proxy_file="$DOWNLOAD_DIR/${username}-tcp-proxy.ovpn"
-    cat > "$tcp_proxy_file" << TCPPROXYCONFIG
+        local tcp_proxy_file="$DOWNLOAD_DIR/${username}-tcp-proxy.ovpn"
+        cat > "$tcp_proxy_file" << TCPPROXYCONFIG
 client
 dev tun
 proto tcp
 remote $SERVER_IP 1443
 http-proxy $SERVER_IP 8080
+http-proxy-option CUSTOM-HEADER "Proxy-Authorization" "Basic $(echo -n "$proxy_user:$proxy_pass" | base64)"
 nobind
 remote-cert-tls server
 cipher AES-256-GCM
@@ -163,8 +160,10 @@ $(cat /etc/openvpn/server/ta.key)
 </tls-auth>
 key-direction 1
 TCPPROXYCONFIG
+    fi
 
-    chmod 644 "$udp_file" "$tcp_file" "$udp_proxy_file" "$tcp_proxy_file"
+    chmod 644 "$udp_file" "$tcp_file"
+    [[ -n "$proxy_user" ]] && chmod 644 "$DOWNLOAD_DIR/${username}-udp-proxy.ovpn" "$DOWNLOAD_DIR/${username}-tcp-proxy.ovpn"
     
     local udp_link="http://$DOMAIN/ovpn/${username}-udp.ovpn"
     local tcp_link="http://$DOMAIN/ovpn/${username}-tcp.ovpn"
@@ -172,44 +171,43 @@ TCPPROXYCONFIG
     local tcp_proxy_link="http://$DOMAIN/ovpn/${username}-tcp-proxy.ovpn"
     
     sudo mysql $DB_NAME << EOF
-INSERT INTO openvpn_users (username, expiry_date, udp_config, tcp_config, udp_proxy_config, tcp_proxy_config)
-VALUES ('$username', '$expiry', '$udp_link', '$tcp_link', '$udp_proxy_link', '$tcp_proxy_link')
+INSERT INTO openvpn_users (username, expiry_date, udp_config, tcp_config, udp_proxy_config, tcp_proxy_config, proxy_username, proxy_password)
+VALUES ('$username', '$expiry', '$udp_link', '$tcp_link', '$udp_proxy_link', '$tcp_proxy_link', '$proxy_user', '$proxy_pass')
 ON DUPLICATE KEY UPDATE 
     udp_config='$udp_link', 
     tcp_config='$tcp_link',
     udp_proxy_config='$udp_proxy_link',
-    tcp_proxy_config='$tcp_proxy_link';
+    tcp_proxy_config='$tcp_proxy_link',
+    proxy_username='$proxy_user',
+    proxy_password='$proxy_pass';
 EOF
     
     echo ""
-    echo -e "${GREEN}✓ OpenVPN configs created (Android compatible)!${NC}"
+    echo -e "${GREEN}✓ OpenVPN configs created!${NC}"
     echo ""
     echo -e "${CYAN}╔══════════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${CYAN}║    OpenVPN Configs - Android/iOS Compatible (4 Files)      ║${NC}"
+    echo -e "${CYAN}║           OpenVPN Configuration Links                       ║${NC}"
     echo -e "${CYAN}╚══════════════════════════════════════════════════════════════╝${NC}"
     echo ""
     echo -e "${YELLOW}Username:${NC} $username"
     echo -e "${YELLOW}Expires:${NC} $expiry"
     echo ""
-    echo -e "${GREEN}▶ Direct Connections (Recommended):${NC}"
+    echo -e "${GREEN}▶ Direct (No Proxy) - RECOMMENDED:${NC}"
     echo ""
-    echo -e "${CYAN}1. UDP (Port 1194) - Fast${NC}"
-    echo "$udp_link"
+    echo "  1. UDP: $udp_link"
+    echo "  2. TCP: $tcp_link"
+    
+    if [[ -n "$proxy_user" ]]; then
+        echo ""
+        echo -e "${GREEN}▶ With Proxy (Port 8080):${NC}"
+        echo ""
+        echo "  3. UDP+Proxy: $udp_proxy_link"
+        echo "  4. TCP+Proxy: $tcp_proxy_link"
+        echo ""
+        echo -e "${YELLOW}Proxy Auth:${NC} $proxy_user / $proxy_pass"
+    fi
+    
     echo ""
-    echo -e "${CYAN}2. TCP (Port 1443) - Stable${NC}"
-    echo "$tcp_link"
-    echo ""
-    echo -e "${GREEN}▶ With Squid Proxy (Port 8080):${NC}"
-    echo ""
-    echo -e "${CYAN}3. UDP + Proxy${NC}"
-    echo "$udp_proxy_link"
-    echo ""
-    echo -e "${CYAN}4. TCP + Proxy${NC}"
-    echo "$tcp_proxy_link"
-    echo ""
-    echo -e "${CYAN}═══════════════════════════════════════════════════════════════${NC}"
-    echo -e "${YELLOW}✓ All configs tested with OpenVPN for Android${NC}"
-    echo -e "${YELLOW}✓ Removed unsupported options${NC}"
     echo -e "${CYAN}═══════════════════════════════════════════════════════════════${NC}"
     echo ""
 }
@@ -222,10 +220,7 @@ delete_client() {
     echo "yes" | ./easyrsa revoke "$username" 2>&1 | grep -E "(Notice|revoked)"
     ./easyrsa gen-crl 2>&1 | grep -E "Notice"
     
-    rm -f "$DOWNLOAD_DIR/${username}-udp.ovpn"
-    rm -f "$DOWNLOAD_DIR/${username}-tcp.ovpn"
-    rm -f "$DOWNLOAD_DIR/${username}-udp-proxy.ovpn"
-    rm -f "$DOWNLOAD_DIR/${username}-tcp-proxy.ovpn"
+    rm -f "$DOWNLOAD_DIR/${username}"-*.ovpn
     
     sudo mysql $DB_NAME -e "UPDATE openvpn_users SET status='disabled' WHERE username='$username';"
     
@@ -236,7 +231,7 @@ list_clients() {
     echo -e "${CYAN}OpenVPN Users:${NC}"
     echo ""
     sudo mysql $DB_NAME -t << 'EOF'
-SELECT username, DATE_FORMAT(created_date,'%Y-%m-%d') as created, 
+SELECT username, proxy_username, DATE_FORMAT(created_date,'%Y-%m-%d') as created, 
        DATE_FORMAT(expiry_date,'%Y-%m-%d') as expires, status
 FROM openvpn_users ORDER BY created_date DESC;
 EOF
@@ -246,7 +241,7 @@ show_client_info() {
     local username=$1
     [[ -z "$username" ]] && { echo -e "${RED}Usage: show_client_info <username>${NC}"; return 1; }
     
-    local info=$(sudo mysql $DB_NAME -sN -e "SELECT udp_config, tcp_config, udp_proxy_config, tcp_proxy_config, DATE_FORMAT(expiry_date,'%Y-%m-%d'), status FROM openvpn_users WHERE username='$username';")
+    local info=$(sudo mysql $DB_NAME -sN -e "SELECT udp_config, tcp_config, udp_proxy_config, tcp_proxy_config, proxy_username, proxy_password, DATE_FORMAT(expiry_date,'%Y-%m-%d'), status FROM openvpn_users WHERE username='$username';")
     
     [[ -z "$info" ]] && { echo -e "${RED}User not found${NC}"; return 1; }
     
@@ -254,8 +249,10 @@ show_client_info() {
     local tcp=$(echo "$info" | awk '{print $2}')
     local udp_proxy=$(echo "$info" | awk '{print $3}')
     local tcp_proxy=$(echo "$info" | awk '{print $4}')
-    local expiry=$(echo "$info" | awk '{print $5}')
-    local status=$(echo "$info" | awk '{print $6}')
+    local proxy_user=$(echo "$info" | awk '{print $5}')
+    local proxy_pass=$(echo "$info" | awk '{print $6}')
+    local expiry=$(echo "$info" | awk '{print $7}')
+    local status=$(echo "$info" | awk '{print $8}')
     
     echo ""
     echo -e "${CYAN}OpenVPN User: $username${NC}"
@@ -265,10 +262,14 @@ show_client_info() {
     echo -e "${GREEN}Direct Configs:${NC}"
     echo "  UDP: $udp"
     echo "  TCP: $tcp"
-    echo ""
-    echo -e "${GREEN}Proxy Configs (Port 8080):${NC}"
-    echo "  UDP+Proxy: $udp_proxy"
-    echo "  TCP+Proxy: $tcp_proxy"
+    
+    if [[ -n "$proxy_user" ]]; then
+        echo ""
+        echo -e "${GREEN}Proxy Configs:${NC}"
+        echo "  UDP+Proxy: $udp_proxy"
+        echo "  TCP+Proxy: $tcp_proxy"
+        echo -e "${YELLOW}Proxy Auth:${NC} $proxy_user / $proxy_pass"
+    fi
     echo ""
 }
 
@@ -285,19 +286,18 @@ show_connections() {
 show_menu() {
     clear
     echo -e "${CYAN}╔══════════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${CYAN}║      OpenVPN + Proxy (Android Compatible)                  ║${NC}"
+    echo -e "${CYAN}║          OpenVPN Management - VPS Manager Pro               ║${NC}"
     echo -e "${CYAN}╚══════════════════════════════════════════════════════════════╝${NC}\n"
-    echo -e "${GREEN}1.${NC} Add OpenVPN User (4 configs)"
+    echo -e "${GREEN}1.${NC} Add OpenVPN User (Direct + Optional Proxy)"
     echo -e "${GREEN}2.${NC} Delete User"
     echo -e "${GREEN}3.${NC} List All Users"
-    echo -e "${GREEN}4.${NC} Show User Info (Download Links)"
+    echo -e "${GREEN}4.${NC} Show User Info"
     echo -e "${GREEN}5.${NC} Show Active Connections"
     echo -e "${GREEN}6.${NC} Restart OpenVPN"
     echo -e "${GREEN}7.${NC} Initialize Database"
     echo -e "${GREEN}0.${NC} Exit"
     echo ""
-    echo -e "${YELLOW}VPN Ports:${NC} UDP 1194, TCP 1443"
-    echo -e "${YELLOW}Proxy Port:${NC} 8080"
+    echo -e "${YELLOW}Ports:${NC} UDP 1194, TCP 1443, Proxy 8080"
     echo -e "${YELLOW}Status:${NC} UDP=$(systemctl is-active openvpn-server@server-udp) TCP=$(systemctl is-active openvpn-server@server-tcp)"
     echo ""
 }
@@ -310,7 +310,15 @@ main() {
             1)
                 read -p "Username: " user
                 read -p "Days valid: " days
-                create_client "$user" "$days"
+                read -p "Add proxy configs? (y/n) [n]: " add_proxy
+                
+                if [[ "$add_proxy" == "y" ]]; then
+                    read -p "Proxy username: " puser
+                    read -p "Proxy password: " ppass
+                    create_client "$user" "$days" "$puser" "$ppass"
+                else
+                    create_client "$user" "$days"
+                fi
                 read -p "Press enter..."
                 ;;
             2)
