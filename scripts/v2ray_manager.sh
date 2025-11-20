@@ -53,21 +53,37 @@ add_user_to_config() {
     
     case $protocol in
         vless)
+            # Add to Port 443
             jq ".inbounds[0].settings.clients += [{\"id\": \"$uuid\", \"email\": \"$email\", \"level\": 0}]" \
+                $V2RAY_CONFIG > ${V2RAY_CONFIG}.tmp
+            mv ${V2RAY_CONFIG}.tmp $V2RAY_CONFIG
+            # Add to Port 80
+            jq ".inbounds[3].settings.clients += [{\"id\": \"$uuid\", \"email\": \"$email\", \"level\": 0}]" \
                 $V2RAY_CONFIG > ${V2RAY_CONFIG}.tmp
             mv ${V2RAY_CONFIG}.tmp $V2RAY_CONFIG
             ;;
         vmess)
+            # Add to Port 443
             jq ".inbounds[1].settings.clients += [{\"id\": \"$uuid\", \"email\": \"$email\", \"alterId\": 0}]" \
+                $V2RAY_CONFIG > ${V2RAY_CONFIG}.tmp
+            mv ${V2RAY_CONFIG}.tmp $V2RAY_CONFIG
+            # Add to Port 80
+            jq ".inbounds[4].settings.clients += [{\"id\": \"$uuid\", \"email\": \"$email\", \"alterId\": 0}]" \
                 $V2RAY_CONFIG > ${V2RAY_CONFIG}.tmp
             mv ${V2RAY_CONFIG}.tmp $V2RAY_CONFIG
             ;;
         trojan)
+            # Add to Port 443
             jq ".inbounds[2].settings.clients += [{\"password\": \"$uuid\", \"email\": \"$email\"}]" \
+                $V2RAY_CONFIG > ${V2RAY_CONFIG}.tmp
+            mv ${V2RAY_CONFIG}.tmp $V2RAY_CONFIG
+            # Add to Port 80
+            jq ".inbounds[5].settings.clients += [{\"password\": \"$uuid\", \"email\": \"$email\"}]" \
                 $V2RAY_CONFIG > ${V2RAY_CONFIG}.tmp
             mv ${V2RAY_CONFIG}.tmp $V2RAY_CONFIG
             ;;
     esac
+}
 }
 
 # Generate full configs with both Port 443 and 80
@@ -102,7 +118,7 @@ generate_full_configs() {
             echo ""
             
             echo -e "${GREEN}═══ Config 2: VLESS + TCP (Port 80 Fallback) ═══${NC}"
-            local vless_80="vless://${uuid}@${server_ip}:80?encryption=none&security=none&type=tcp&host=${DOMAIN}#${username}_VLESS_80"
+            local vless_80="vless://${uuid}@${DOMAIN}:80?encryption=none&security=none&type=ws&path=%2Fvless80&host=${DOMAIN}#${username}_VLESS_80"
             echo ""
             echo -e "${CYAN}Link:${NC}"
             echo "$vless_80"
@@ -198,7 +214,7 @@ VMESS80
             
         trojan)
             echo -e "${GREEN}═══ Config 1: Trojan + TLS (Port 443) ═══${NC}"
-            local trojan_443="trojan://${uuid}@${DOMAIN}:443?security=tls&sni=${DOMAIN}&type=tcp&headerType=none#${username}_Trojan_443"
+            local trojan_443="trojan://${uuid}@${DOMAIN}:443?security=tls&sni=${DOMAIN}&type=ws&path=%2Fvless80&headerType=none#${username}_Trojan_443"
             echo ""
             echo -e "${CYAN}Link:${NC}"
             echo "$trojan_443"
@@ -207,7 +223,7 @@ VMESS80
             echo ""
             
             echo -e "${GREEN}═══ Config 2: Trojan + TCP (Port 80) ═══${NC}"
-            local trojan_80="trojan://${uuid}@${server_ip}:80?security=none&type=tcp#${username}_Trojan_80"
+            local trojan_80="trojan://${uuid}@${server_ip}:80?security=none&type=ws&path=%2Fvless80#${username}_Trojan_80"
             echo ""
             echo -e "${CYAN}Link:${NC}"
             echo "$trojan_80"
