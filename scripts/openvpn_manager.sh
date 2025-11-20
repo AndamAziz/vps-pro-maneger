@@ -50,120 +50,74 @@ create_client() {
     local expiry=$(date -d "+$days days" +%Y-%m-%d)
     mkdir -p $DOWNLOAD_DIR
     
-    # Direct configs (no proxy)
+    # ═══════════════════════════════════════════════════════════════
+    # Direct UDP Config (No Proxy)
+    # ═══════════════════════════════════════════════════════════════
     local udp_file="$DOWNLOAD_DIR/${username}-udp.ovpn"
-    cat > "$udp_file" << UDPCONFIG
+    cat > "$udp_file" << 'UDPCONFIG'
 client
 dev tun
 proto udp
-remote $SERVER_IP 1194
+remote SERVER_IP 1194
 nobind
 remote-cert-tls server
 cipher AES-256-GCM
 auth SHA512
 verb 3
 <ca>
-$(cat $EASYRSA_DIR/pki/ca.crt)
+CA_CERT
 </ca>
 <cert>
-$(openssl x509 -in $EASYRSA_DIR/pki/issued/$username.crt)
+CLIENT_CERT
 </cert>
 <key>
-$(cat $EASYRSA_DIR/pki/private/$username.key)
+CLIENT_KEY
 </key>
 <tls-auth>
-$(cat /etc/openvpn/server/ta.key)
+TLS_AUTH
 </tls-auth>
 key-direction 1
 UDPCONFIG
+    sed -i "s|SERVER_IP|$SERVER_IP|g" "$udp_file"
+    sed -i "/CA_CERT/r /dev/stdin" "$udp_file" <<< "$(cat $EASYRSA_DIR/pki/ca.crt)"
+    sed -i "/CA_CERT/d" "$udp_file"
+    sed -i "/CLIENT_CERT/r /dev/stdin" "$udp_file" <<< "$(openssl x509 -in $EASYRSA_DIR/pki/issued/$username.crt)"
+    sed -i "/CLIENT_CERT/d" "$udp_file"
+    sed -i "/CLIENT_KEY/r /dev/stdin" "$udp_file" <<< "$(cat $EASYRSA_DIR/pki/private/$username.key)"
+    sed -i "/CLIENT_KEY/d" "$udp_file"
+    sed -i "/TLS_AUTH/r /dev/stdin" "$udp_file" <<< "$(cat /etc/openvpn/server/ta.key)"
+    sed -i "/TLS_AUTH/d" "$udp_file"
 
+    # ═══════════════════════════════════════════════════════════════
+    # Direct TCP Config (No Proxy)
+    # ═══════════════════════════════════════════════════════════════
     local tcp_file="$DOWNLOAD_DIR/${username}-tcp.ovpn"
-    cat > "$tcp_file" << TCPCONFIG
-client
-dev tun
-proto tcp
-remote $SERVER_IP 1443
-nobind
-remote-cert-tls server
-cipher AES-256-GCM
-auth SHA512
-verb 3
-<ca>
-$(cat $EASYRSA_DIR/pki/ca.crt)
-</ca>
-<cert>
-$(openssl x509 -in $EASYRSA_DIR/pki/issued/$username.crt)
-</cert>
-<key>
-$(cat $EASYRSA_DIR/pki/private/$username.key)
-</key>
-<tls-auth>
-$(cat /etc/openvpn/server/ta.key)
-</tls-auth>
-key-direction 1
-TCPCONFIG
+    cp "$udp_file" "$tcp_file"
+    sed -i 's/proto udp/proto tcp/' "$tcp_file"
+    sed -i 's/remote .* 1194/remote '"$SERVER_IP"' 1443/' "$tcp_file"
 
-    # Proxy configs with authentication
+    # ═══════════════════════════════════════════════════════════════
+    # Proxy Configs - ONLY if credentials provided
+    # ═══════════════════════════════════════════════════════════════
     if [[ -n "$proxy_user" && -n "$proxy_pass" ]]; then
+        # Create auth file
+        local auth_file="$DOWNLOAD_DIR/${username}-proxy-auth.txt"
+        echo "$proxy_user" > "$auth_file"
+        echo "$proxy_pass" >> "$auth_file"
+        chmod 600 "$auth_file"
+        
+        # UDP + Proxy
         local udp_proxy_file="$DOWNLOAD_DIR/${username}-udp-proxy.ovpn"
-        cat > "$udp_proxy_file" << UDPPROXYCONFIG
-client
-dev tun
-proto udp
-remote $SERVER_IP 1194
-http-proxy $SERVER_IP 8080
-http-proxy-option CUSTOM-HEADER "Proxy-Authorization" "Basic $(echo -n "$proxy_user:$proxy_pass" | base64)"
-nobind
-remote-cert-tls server
-cipher AES-256-GCM
-auth SHA512
-verb 3
-<ca>
-$(cat $EASYRSA_DIR/pki/ca.crt)
-</ca>
-<cert>
-$(openssl x509 -in $EASYRSA_DIR/pki/issued/$username.crt)
-</cert>
-<key>
-$(cat $EASYRSA_DIR/pki/private/$username.key)
-</key>
-<tls-auth>
-$(cat /etc/openvpn/server/ta.key)
-</tls-auth>
-key-direction 1
-UDPPROXYCONFIG
-
+        cp "$udp_file" "$udp_proxy_file"
+        sed -i "/nobind/a http-proxy $SERVER_IP 8080\nhttp-proxy-option CUSTOM-HEADER \"Proxy-Authorization\" \"Basic $(echo -n "$proxy_user:$proxy_pass" | base64 -w 0)\"" "$udp_proxy_file"
+        
+        # TCP + Proxy
         local tcp_proxy_file="$DOWNLOAD_DIR/${username}-tcp-proxy.ovpn"
-        cat > "$tcp_proxy_file" << TCPPROXYCONFIG
-client
-dev tun
-proto tcp
-remote $SERVER_IP 1443
-http-proxy $SERVER_IP 8080
-http-proxy-option CUSTOM-HEADER "Proxy-Authorization" "Basic $(echo -n "$proxy_user:$proxy_pass" | base64)"
-nobind
-remote-cert-tls server
-cipher AES-256-GCM
-auth SHA512
-verb 3
-<ca>
-$(cat $EASYRSA_DIR/pki/ca.crt)
-</ca>
-<cert>
-$(openssl x509 -in $EASYRSA_DIR/pki/issued/$username.crt)
-</cert>
-<key>
-$(cat $EASYRSA_DIR/pki/private/$username.key)
-</key>
-<tls-auth>
-$(cat /etc/openvpn/server/ta.key)
-</tls-auth>
-key-direction 1
-TCPPROXYCONFIG
+        cp "$tcp_file" "$tcp_proxy_file"
+        sed -i "/nobind/a http-proxy $SERVER_IP 8080\nhttp-proxy-option CUSTOM-HEADER \"Proxy-Authorization\" \"Basic $(echo -n "$proxy_user:$proxy_pass" | base64 -w 0)\"" "$tcp_proxy_file"
     fi
 
-    chmod 644 "$udp_file" "$tcp_file"
-    [[ -n "$proxy_user" ]] && chmod 644 "$DOWNLOAD_DIR/${username}-udp-proxy.ovpn" "$DOWNLOAD_DIR/${username}-tcp-proxy.ovpn"
+    chmod 644 "$DOWNLOAD_DIR/${username}"-*.ovpn
     
     local udp_link="http://$DOMAIN/ovpn/${username}-udp.ovpn"
     local tcp_link="http://$DOMAIN/ovpn/${username}-tcp.ovpn"
@@ -186,25 +140,26 @@ EOF
     echo -e "${GREEN}✓ OpenVPN configs created!${NC}"
     echo ""
     echo -e "${CYAN}╔══════════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${CYAN}║           OpenVPN Configuration Links                       ║${NC}"
+    echo -e "${CYAN}║              OpenVPN Configuration Links                    ║${NC}"
     echo -e "${CYAN}╚══════════════════════════════════════════════════════════════╝${NC}"
     echo ""
     echo -e "${YELLOW}Username:${NC} $username"
     echo -e "${YELLOW}Expires:${NC} $expiry"
     echo ""
-    echo -e "${GREEN}▶ Direct (No Proxy) - RECOMMENDED:${NC}"
+    echo -e "${GREEN}▶ Direct (Recommended):${NC}"
     echo ""
     echo "  1. UDP: $udp_link"
     echo "  2. TCP: $tcp_link"
     
     if [[ -n "$proxy_user" ]]; then
         echo ""
-        echo -e "${GREEN}▶ With Proxy (Port 8080):${NC}"
+        echo -e "${GREEN}▶ With Proxy:${NC}"
         echo ""
         echo "  3. UDP+Proxy: $udp_proxy_link"
         echo "  4. TCP+Proxy: $tcp_proxy_link"
         echo ""
-        echo -e "${YELLOW}Proxy Auth:${NC} $proxy_user / $proxy_pass"
+        echo -e "${YELLOW}Note: Proxy configs may not work on all devices${NC}"
+        echo -e "${YELLOW}Use direct configs for best compatibility${NC}"
     fi
     
     echo ""
@@ -220,7 +175,7 @@ delete_client() {
     echo "yes" | ./easyrsa revoke "$username" 2>&1 | grep -E "(Notice|revoked)"
     ./easyrsa gen-crl 2>&1 | grep -E "Notice"
     
-    rm -f "$DOWNLOAD_DIR/${username}"-*.ovpn
+    rm -f "$DOWNLOAD_DIR/${username}"-*
     
     sudo mysql $DB_NAME -e "UPDATE openvpn_users SET status='disabled' WHERE username='$username';"
     
@@ -288,7 +243,7 @@ show_menu() {
     echo -e "${CYAN}╔══════════════════════════════════════════════════════════════╗${NC}"
     echo -e "${CYAN}║          OpenVPN Management - VPS Manager Pro               ║${NC}"
     echo -e "${CYAN}╚══════════════════════════════════════════════════════════════╝${NC}\n"
-    echo -e "${GREEN}1.${NC} Add OpenVPN User (Direct + Optional Proxy)"
+    echo -e "${GREEN}1.${NC} Add OpenVPN User"
     echo -e "${GREEN}2.${NC} Delete User"
     echo -e "${GREEN}3.${NC} List All Users"
     echo -e "${GREEN}4.${NC} Show User Info"
@@ -297,8 +252,9 @@ show_menu() {
     echo -e "${GREEN}7.${NC} Initialize Database"
     echo -e "${GREEN}0.${NC} Exit"
     echo ""
-    echo -e "${YELLOW}Ports:${NC} UDP 1194, TCP 1443, Proxy 8080"
+    echo -e "${YELLOW}Ports:${NC} UDP 1194, TCP 1443"
     echo -e "${YELLOW}Status:${NC} UDP=$(systemctl is-active openvpn-server@server-udp) TCP=$(systemctl is-active openvpn-server@server-tcp)"
+    echo -e "${YELLOW}Note:${NC} Use direct configs (UDP/TCP) - proxy configs experimental"
     echo ""
 }
 
@@ -310,7 +266,9 @@ main() {
             1)
                 read -p "Username: " user
                 read -p "Days valid: " days
-                read -p "Add proxy configs? (y/n) [n]: " add_proxy
+                echo ""
+                echo -e "${YELLOW}Proxy configs are experimental and may not work on all devices${NC}"
+                read -p "Add proxy configs anyway? (y/n) [n]: " add_proxy
                 
                 if [[ "$add_proxy" == "y" ]]; then
                     read -p "Proxy username: " puser
