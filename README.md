@@ -9,7 +9,7 @@
 
 ## 🚀 One-Command Installation
 ```bash
-curl -sSL https://raw.githubusercontent.com/AndamAziz/vps-pro-maneger/main/install.sh | sudo bash
+curl -sSL https://raw.githubusercontent.com/AndamAziz/vps-pro-maneger/main/auto-install.sh | sudo bash
 ```
 
 **Installation time:** 5-10 minutes
@@ -142,8 +142,8 @@ git clone https://github.com/AndamAziz/vps-pro-maneger.git
 cd vps-pro-maneger
 
 # 2. Run installer
-chmod +x install.sh
-sudo ./install.sh
+chmod +x auto-install.sh
+sudo ./auto-install.sh
 
 # 3. Start bot
 vpsbot start
