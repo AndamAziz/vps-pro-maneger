@@ -1,339 +1,631 @@
+# 🚀 VPS Manager Pro v5.0
+
 <div align="center">
 
-# 🌐 VPS Manager Pro
+![Version](https://img.shields.io/badge/version-5.0-blue.svg)
+![License](https://img.shields.io/badge/license-MIT-green.svg)
+![Platform](https://img.shields.io/badge/platform-Ubuntu%2024.04-orange.svg)
+![Status](https://img.shields.io/badge/status-production-brightgreen.svg)
 
-### Complete VPS Management System with Advanced Telegram Bot
+**Professional VPS Management System with 5 Integrated Services**
 
-[![CI/CD](https://github.com/AndamAziz/vps-pro-maneger/workflows/CI/CD%20Pipeline/badge.svg)](https://github.com/AndamAziz/vps-pro-maneger/actions)
-[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
-[![Platform](https://img.shields.io/badge/Platform-Ubuntu%2020.04%2B-orange.svg)](https://ubuntu.com/)
-[![Python](https://img.shields.io/badge/Python-3.8%2B-blue.svg)](https://www.python.org/)
-[![Telegram](https://img.shields.io/badge/Telegram-Bot-2CA5E0?logo=telegram&logoColor=white)](https://t.me/ALLINONEBIGBOSSbot)
-[![Docker](https://img.shields.io/badge/Docker-Ready-2496ED?logo=docker&logoColor=white)](https://www.docker.com/)
-
-[Features](#-features) • [Installation](#-quick-installation) • [Usage](#-usage) • [Documentation](#-documentation) • [Support](#-support)
-
-<img src="https://img.shields.io/badge/Status-Production%20Ready-success?style=for-the-badge" alt="Status">
+[Features](#-features) • [Installation](#-installation) • [Services](#-services) • [Usage](#-usage) • [Screenshots](#-screenshots)
 
 </div>
 
-<img src="https://img.shields.io/badge/Status-Production%20Ready-success?style=for-the-badge" alt="Status">
+---
 
-</div>
+## 📋 Table of Contents
+
+- [Overview](#-overview)
+- [Features](#-features)
+- [Services](#-services)
+- [Requirements](#-requirements)
+- [Installation](#-installation)
+- [Quick Start](#-quick-start)
+- [Usage Guide](#-usage-guide)
+- [Commands Reference](#-commands-reference)
+- [Configuration](#-configuration)
+- [Troubleshooting](#-troubleshooting)
+- [Contributing](#-contributing)
+- [License](#-license)
+
+---
+
+## 🎯 Overview
+
+**VPS Manager Pro** is a comprehensive, all-in-one management system for Ubuntu VPS servers. It provides a unified interface to manage multiple VPN and proxy services, with automated user management, SSL certificates, database operations, and real-time monitoring.
+
+### Why VPS Manager Pro?
+
+- ✅ **5 Services in One**: SSH, Squid Proxy, V2Ray, OpenVPN, SOCKS5
+- ✅ **Professional UI**: Beautiful terminal interface with color coding
+- ✅ **Auto Management**: User expiry, traffic limits, database backups
+- ✅ **Production Ready**: Battle-tested on live servers
+- ✅ **Easy to Use**: One command to install, simple menus to operate
+- ✅ **Kurdish Support**: Full Kurdish language interface available
 
 ---
 
 ## ✨ Features
 
-<table>
-<tr>
-<td width="50%">
+### 🔐 Security
+- Multi-protocol VPN support (V2Ray, OpenVPN)
+- Encrypted proxy connections (SOCKS5, HTTP/HTTPS)
+- SSL/TLS certificate management with Let's Encrypt
+- User authentication for all services
+- Automatic firewall configuration
 
-### 📥 **Media Downloader Bot**
-- 🎵 **TikTok** - No watermark downloads
-- 📸 **Instagram** - Posts, Reels, Stories (API authenticated)
-- 🎬 **YouTube** - Videos up to 720p
-- 📘 **Facebook** - Videos and media
-- ⚡ **Lightning fast** downloads
-- 🔄 **Auto cleanup** system
+### 👥 User Management
+- Create/delete users across all services
+- Set expiration dates (auto-expire)
+- Traffic limit tracking
+- User status monitoring
+- Bulk operations support
 
-</td>
-<td width="50%">
+### 📊 Monitoring & Analytics
+- Real-time connection status
+- Traffic usage statistics
+- System resource monitoring (CPU, RAM, Disk)
+- Service health checks
+- Connection logs
 
-### 🔐 **VPS Management**
-- 👤 **SSH User Management**
-- 🌐 **Squid Proxy Server** (Port 3128)
-- 🔒 **V2Ray VPN** (VLESS/VMess)
-- 🔑 **SSL Certificates** (Auto Let's Encrypt)
-- 💾 **MySQL Database**
-- 📊 **Real-time Statistics**
+### 🗄️ Database Management
+- MySQL integration for all services
+- Automated backups
+- Easy restore functionality
+- User data persistence
+- Query interface
 
-</td>
-</tr>
-</table>
+### 🎨 User Interface
+- Beautiful ASCII art banners
+- Color-coded menus
+- Clear status indicators
+- Progress feedback
+- Error handling with helpful messages
 
 ---
 
-## 🚀 Quick Installation
+## 🛠️ Services
 
-### One-Command Install (Recommended)
+### 1. 👤 SSH User Management
+- **Port**: 22
+- **Features**: 
+  - Shell access control
+  - Password management
+  - Expiry tracking
+  - Connection monitoring
+
+### 2. 🌐 Squid HTTP Proxy
+- **Ports**: 3128, 8080
+- **Features**:
+  - HTTP/HTTPS proxying
+  - Username/password authentication
+  - Traffic filtering
+  - Caching support
+  - Dual port configuration
+
+### 3. 🔒 V2Ray VPN
+- **Ports**: 443 (TLS), 87 (HTTP)
+- **Protocols**: VLESS, VMess, Trojan
+- **Features**:
+  - TLS encryption
+  - WebSocket transport
+  - Multiple protocols
+  - QR code generation
+  - Config file download links
+
+### 4. 🔐 OpenVPN
+- **Ports**: 1194 (UDP), 1443 (TCP)
+- **Features**:
+  - UDP for speed
+  - TCP for stability
+  - Certificate-based authentication
+  - Mobile-compatible configs
+  - Direct connection (no proxy required)
+  - .ovpn file generation
+
+### 5. 🧦 SOCKS5 Proxy (NEW!)
+- **Port**: 1080
+- **Features**:
+  - Dante SOCKS5 server
+  - TCP and UDP support
+  - Username/password authentication
+  - Faster than HTTP proxy
+  - Perfect for gaming, torrents
+  - Works with any protocol
+
+---
+
+## 📦 Requirements
+
+### System Requirements
+- **OS**: Ubuntu 24.04 LTS (recommended) or Ubuntu 22.04
+- **RAM**: Minimum 1GB (2GB+ recommended)
+- **Disk**: 10GB+ free space
+- **CPU**: 1 core minimum (2+ recommended)
+
+### Network Requirements
+- Public IPv4 address
+- Domain name (for SSL certificates)
+- Open ports: 22, 80, 443, 1080, 1194, 1443, 3128, 8080
+
+### Software Requirements
+- Root or sudo access
+- Git installed
+- MySQL/MariaDB (auto-installed)
+- Nginx (auto-installed)
+
+---
+
+## 🚀 Installation
+
+### One-Line Installation
 ```bash
-curl -sSL https://raw.githubusercontent.com/AndamAziz/vps-pro-maneger/main/vps-manager-installer.sh | sudo bash
+bash <(curl -s https://raw.githubusercontent.com/AndamAziz/vps-pro-maneger/main/install.sh)
 ```
-
-> ⏱️ **Installation time:** 5-10 minutes  
-> ✅ **Fully automated** - No manual configuration needed
-
-### What Gets Installed
-```plaintext
-✅ System Updates & Security
-✅ MySQL/MariaDB Database
-✅ Nginx Web Server
-✅ Squid Proxy Server
-✅ V2Ray VPN Server
-✅ Python 3 & Dependencies
-✅ SSL Certificate (Let's Encrypt)
-✅ Firewall Configuration (UFW)
-✅ Telegram Bot (Auto-configured)
-```
-
----
-
-## 📋 Requirements
-
-| Component | Requirement |
-|-----------|-------------|
-| **OS** | Ubuntu 20.04+ / Debian 10+ |
-| **RAM** | Minimum 1GB (2GB+ recommended) |
-| **Storage** | 10GB+ free space |
-| **Domain** | Valid domain pointing to your server |
-| **Access** | Root/sudo privileges |
-
----
-
-## 🎮 Usage
-
-### After Installation
-
-The bot starts automatically! Control it with these commands:
-```bash
-vpsbot start      # Start the bot
-vpsbot stop       # Stop the bot  
-vpsbot restart    # Restart the bot
-vpsbot status     # Check bot status
-vpsbot logs       # View live logs
-```
-
-### Telegram Bot Commands
-
-Open Telegram → Search: **[@ALLINONEBIGBOSSbot](https://t.me/ALLINONEBIGBOSSbot)**
-```
-/start    - Welcome & features
-/help     - Help menu
-/status   - Server statistics
-```
-
-### Download Media
-
-Simply send any link:
-```
-✅ TikTok:     https://www.tiktok.com/@user/video/123456
-✅ Instagram:  https://www.instagram.com/p/ABC123/
-✅ YouTube:    https://www.youtube.com/watch?v=ABC123
-✅ Facebook:   https://www.facebook.com/watch/?v=123456
-```
-
-Bot automatically detects platform and downloads! 🎯
-
----
-
-## 📱 Screenshots
-
-<div align="center">
-
-### Bot Interface
-*Clean, modern Telegram interface*
-
-### Download in Action
-*Fast media downloads from any platform*
-
-### Server Management
-*Real-time statistics and control*
-
-</div>
-
----
-
-## 🏗️ Architecture
-```plaintext
-VPS Manager Pro
-├── Telegram Bot (Python)
-│   ├── Media Downloader
-│   │   ├── TikTok Handler (yt-dlp)
-│   │   ├── Instagram Handler (instagrapi)
-│   │   ├── YouTube Handler (yt-dlp)
-│   │   └── Facebook Handler (yt-dlp)
-│   └── User Management
-│       ├── SSH Users
-│       ├── Proxy Users
-│       └── VPN Users
-├── Database (MySQL)
-│   ├── Users Table
-│   ├── Statistics Table
-│   └── Logs Table
-└── Services
-    ├── Nginx (Web Server)
-    ├── Squid (Proxy)
-    ├── V2Ray (VPN)
-    └── Certbot (SSL)
-```
-
----
-
-## 🔧 Configuration
-
-### Default Settings
-
-**Telegram Bot:** [@ALLINONEBIGBOSSbot](https://t.me/ALLINONEBIGBOSSbot)
-
-**Web Panel Access:**
-```
-URL:      https://your-domain.com/admin
-Username: admin
-Password: KurdCloud@2025
-```
-
-⚠️ **Security:** Change default password after first login!
-
-### Service Ports
-
-| Service | Port | Protocol | Status |
-|---------|------|----------|--------|
-| SSH | 22 | TCP | ✅ Secured |
-| HTTP | 80 | TCP | ✅ Active |
-| HTTPS | 443 | TCP | ✅ Active |
-| Squid Proxy | 3128 | TCP | ✅ Active |
-| V2Ray VLESS | 443 | TCP+TLS | ✅ Active |
-
----
-
-## 📚 Documentation
 
 ### Manual Installation
-
-If you prefer step-by-step installation:
 ```bash
 # 1. Clone repository
 git clone https://github.com/AndamAziz/vps-pro-maneger.git
 cd vps-pro-maneger
 
-# 2. Make installer executable
-chmod +x vps-manager-installer.sh
+# 2. Run installer
+chmod +x install.sh
+sudo ./install.sh
 
-# 3. Run installer
-sudo ./vps-manager-installer.sh
+# 3. Follow the installation wizard
+# - Enter MySQL root password
+# - Enter domain name
+# - Configure services
 ```
 
-### Configuration Files
-```plaintext
-/opt/vps-manager/
-├── config/
-│   ├── domain.conf          # Domain settings
-│   └── database.conf        # Database credentials (secure)
-├── telegram-bot/
-│   ├── bot.py              # Main bot file
-│   ├── config.py           # Bot configuration
-│   └── handlers/
-│       └── media.py        # Media download handlers
-└── logs/
-    └── telegram-bot.log    # Bot activity logs
+### Installation Time
+⏱️ Approximately 5-10 minutes depending on your server speed
+
+---
+
+## 🎬 Quick Start
+
+### Step 1: Run Main Menu
+```bash
+vpsmanager
+```
+
+### Step 2: Create Your First User
+
+**For VPN (V2Ray):**
+```bash
+vpsv2ray
+# Select: 1 (Add User)
+# Username: john
+# Days: 30
+# Protocol: 1 (VLESS)
+```
+
+**For Proxy (SOCKS5):**
+```bash
+vpssocks5
+# Select: 1 (Add User)
+# Username: john
+# Password: secure123
+# Days: 30
+```
+
+### Step 3: Get Connection Info
+```bash
+# Show user details
+vpsv2ray
+# Select: 4 (Show User Info)
+# Copy the config link or QR code
+```
+
+### Step 4: Connect from Client
+- **V2Ray**: Use v2rayN, v2rayNG, or any V2Ray client
+- **OpenVPN**: Use OpenVPN Connect
+- **SOCKS5**: Configure in browser or use proxifier
+
+---
+
+## 📚 Usage Guide
+
+### Managing V2Ray VPN
+```bash
+vpsv2ray
+```
+
+**Main Operations:**
+1. **Add User**: Create new VPN account
+2. **Delete User**: Remove account
+3. **List Users**: View all accounts
+4. **Show Info**: Get config links & QR codes
+5. **Check Expired**: Auto-disable expired accounts
+
+**Supported Protocols:**
+- VLESS (fastest)
+- VMess (balanced)
+- Trojan (stealth)
+
+**Connection Methods:**
+- Port 443: TLS encrypted (recommended)
+- Port 87: HTTP (fallback)
+
+### Managing OpenVPN
+```bash
+vpsopenvpn
+```
+
+**Main Operations:**
+1. **Add User**: Generate .ovpn files
+2. **Delete User**: Revoke certificates
+3. **List Users**: View all VPN users
+4. **Show Info**: Get download links
+5. **Active Connections**: See who's online
+
+**Config Types:**
+- UDP (Port 1194): Fast, recommended
+- TCP (Port 1443): Stable, firewall-friendly
+
+**Download Links:**
+```
+http://your-domain.com/ovpn/username-udp.ovpn
+http://your-domain.com/ovpn/username-tcp.ovpn
+```
+
+### Managing SOCKS5 Proxy
+```bash
+vpssocks5
+```
+
+**Main Operations:**
+1. **Add User**: Create SOCKS5 account
+2. **Delete User**: Remove account
+3. **List Users**: View all users
+4. **Show Info**: Get connection details
+5. **Test Server**: Check if running
+
+**Connection Details:**
+```
+Server: your-server-ip
+Port: 1080
+Type: SOCKS5
+Username: your-username
+Password: your-password
+```
+
+**Browser Setup (Firefox):**
+```
+Settings → Network Settings → Manual Proxy
+SOCKS5 Proxy: your-server:1080
+✓ Proxy DNS when using SOCKS v5
+```
+
+**Testing:**
+```bash
+curl --socks5 username:password@server:1080 http://ipinfo.io/ip
+```
+
+### Managing Squid Proxy
+```bash
+vpsproxy
+```
+
+**Main Operations:**
+1. **Add User**: Create HTTP proxy account
+2. **Delete User**: Remove account
+3. **List Users**: View all users
+4. **Show Info**: Get proxy settings
+5. **Test Proxy**: Verify connection
+
+**Ports:**
+- 3128: Main proxy port
+- 8080: Alternative port
+
+**Browser Setup:**
+```
+HTTP Proxy: your-server:3128
+HTTPS Proxy: your-server:3128
+Username: your-username
+Password: your-password
+```
+
+### SSL Certificate Management
+```bash
+vpsssl
+```
+
+**Operations:**
+1. **Issue Certificate**: Get new SSL cert
+2. **Renew Certificate**: Update existing cert
+3. **List Certificates**: View all certs
+4. **Auto-Renewal**: Setup automatic renewal
+
+**Requirements:**
+- Valid domain name
+- DNS pointing to your server
+- Port 80 open
+
+### Database Management
+```bash
+vpsdb
+```
+
+**Operations:**
+1. **Backup Database**: Create backup
+2. **Restore Database**: Restore from backup
+3. **List Backups**: View all backups
+4. **Optimize Database**: Clean and optimize
+
+**Backup Location:**
+```
+/root/database_backups/
+```
+
+### Statistics Dashboard
+```bash
+vpsstats
+```
+
+**Real-time Monitoring:**
+- CPU usage
+- RAM usage
+- Disk usage
+- Network traffic
+- Active connections
+- Service status
+
+---
+
+## 🎮 Commands Reference
+
+### Main Commands
+
+| Command | Description |
+|---------|-------------|
+| `vpsmanager` | Main control panel |
+| `vpsssh` | SSH user management |
+| `vpsproxy` | Squid HTTP proxy management |
+| `vpsv2ray` | V2Ray VPN management |
+| `vpsopenvpn` | OpenVPN management |
+| `vpssocks5` | SOCKS5 proxy management |
+| `vpsssl` | SSL certificate management |
+| `vpsdb` | Database management |
+| `vpsstats` | Statistics dashboard |
+| `vpshelp` | Show all commands |
+
+### Quick Actions
+```bash
+# Restart all services
+systemctl restart nginx squid v2ray openvpn-server@server-udp openvpn-server@server-tcp danted
+
+# Check service status
+systemctl status nginx squid v2ray openvpn-server@server-udp danted
+
+# View logs
+journalctl -u v2ray -f
+journalctl -u openvpn-server@server-udp -f
+journalctl -u danted -f
+
+# Check ports
+ss -tulpn | grep -E ':(22|80|443|1080|1194|1443|3128|8080)'
+```
+
+---
+
+## ⚙️ Configuration
+
+### Editing Configurations
+
+**V2Ray:**
+```bash
+nano /usr/local/etc/v2ray/config.json
+systemctl restart v2ray
+```
+
+**OpenVPN:**
+```bash
+nano /etc/openvpn/server/server-udp.conf
+nano /etc/openvpn/server/server-tcp.conf
+systemctl restart openvpn-server@server-udp
+systemctl restart openvpn-server@server-tcp
+```
+
+**SOCKS5:**
+```bash
+nano /etc/danted.conf
+systemctl restart danted
+```
+
+**Squid:**
+```bash
+nano /etc/squid/squid.conf
+systemctl restart squid
+```
+
+**Nginx:**
+```bash
+nano /etc/nginx/sites-available/your-domain.com
+nginx -t
+systemctl reload nginx
+```
+
+### Changing Ports
+
+Edit the respective configuration files and update firewall rules:
+```bash
+# Allow new port
+ufw allow 8888/tcp
+
+# Remove old port
+ufw delete allow 8080/tcp
 ```
 
 ---
 
 ## 🐛 Troubleshooting
 
-<details>
-<summary><b>🔴 Bot not responding?</b></summary>
+### Service Won't Start
 ```bash
-# Check bot status
-vpsbot status
+# Check service status
+systemctl status service-name
 
-# View error logs
-vpsbot logs
+# View detailed logs
+journalctl -u service-name -n 50
 
-# Restart bot
-vpsbot restart
+# Test configuration
+v2ray test -config=/usr/local/etc/v2ray/config.json
+nginx -t
 ```
-</details>
 
-<details>
-<summary><b>🔴 Instagram rate limit error?</b></summary>
+### Can't Connect to VPN
 
-Instagram has built-in rate limiting. Solutions:
-- ✅ Bot uses API authentication (fewer limits)
-- ⏰ Wait 5-10 minutes between requests
-- 🔄 Use TikTok/YouTube (no limits)
-</details>
-
-<details>
-<summary><b>🔴 SSL certificate issues?</b></summary>
+**Check 1: Service Running?**
 ```bash
-# Check certificate status
-certbot certificates
-
-# Renew certificate
-certbot renew
-
-# Verify DNS
-dig your-domain.com
-```
-</details>
-
-<details>
-<summary><b>🔴 Service not starting?</b></summary>
-```bash
-# Check all services
-systemctl status vpsmanager-bot
-systemctl status nginx
 systemctl status v2ray
-systemctl status mysql
-
-# Restart failed service
-systemctl restart [service-name]
+systemctl status openvpn-server@server-udp
 ```
-</details>
+
+**Check 2: Firewall Open?**
+```bash
+ufw status
+```
+
+**Check 3: Correct Configuration?**
+```bash
+# Show user config
+vpsv2ray
+# Select: 4 (Show User Info)
+```
+
+### SOCKS5 Authentication Failed
+
+**Check 1: User Exists?**
+```bash
+vpssocks5
+# Select: 3 (List Users)
+```
+
+**Check 2: Dante Running?**
+```bash
+systemctl status danted
+```
+
+**Check 3: Test Connection**
+```bash
+curl --socks5 username:password@localhost:1080 http://ipinfo.io/ip
+```
+
+### Database Errors
+
+**Solution 1: Initialize Database**
+```bash
+# For each service, run initialization:
+vpsv2ray → 7 (Initialize Database)
+vpsopenvpn → 7 (Initialize Database)
+vpssocks5 → 8 (Initialize Database)
+```
+
+**Solution 2: Restore from Backup**
+```bash
+vpsdb
+# Select: 2 (Restore Database)
+```
+
+### Common Issues
+
+| Problem | Solution |
+|---------|----------|
+| Port already in use | Change port in config |
+| Certificate error | Renew SSL certificate |
+| User can't connect | Check expiry date |
+| Slow connection | Check server resources |
+| Connection drops | Switch to TCP protocol |
 
 ---
 
-## 🔐 Security Features
+## 📱 Client Applications
 
-- ✅ **Firewall enabled** (UFW) with minimal ports
-- ✅ **SSL/TLS encryption** (Let's Encrypt)
-- ✅ **Password hashing** (SHA256)
-- ✅ **Rate limiting** on API endpoints
-- ✅ **Auto security updates**
-- ✅ **Fail2ban** integration
-- ✅ **Secure file permissions**
+### V2Ray Clients
 
-### Security Best Practices
+**Windows:**
+- v2rayN: https://github.com/2dust/v2rayN
 
-1. Change default passwords immediately
-2. Use strong passwords (12+ characters)
-3. Enable 2FA where possible
-4. Regular system updates: `apt update && apt upgrade`
-5. Monitor logs regularly: `vpsbot logs`
-6. Restrict SSH access by IP if possible
+**Mac:**
+- V2RayXS: https://github.com/tzmax/V2RayXS
+
+**Android:**
+- v2rayNG: https://play.google.com/store/apps/details?id=com.v2ray.ang
+
+**iOS:**
+- Shadowrocket (paid)
+- OneClick (free)
+
+### OpenVPN Clients
+
+**Windows/Mac/Linux:**
+- OpenVPN Connect: https://openvpn.net/client/
+
+**Android:**
+- OpenVPN for Android: https://play.google.com/store/apps/details?id=de.blinkt.openvpn
+
+**iOS:**
+- OpenVPN Connect: https://apps.apple.com/app/id590379981
+
+### SOCKS5 Clients
+
+**Windows:**
+- Proxifier: https://www.proxifier.com/
+
+**Android:**
+- ProxyDroid
+- Postern
+
+**iOS:**
+- Shadowrocket
+- Surge
 
 ---
 
-## 💻 Tech Stack
+## 🔒 Security Best Practices
 
-<div align="center">
-
-| Technology | Purpose | Version |
-|------------|---------|---------|
-| **Python** | Bot Framework | 3.8+ |
-| **python-telegram-bot** | Telegram API | 20.7 |
-| **yt-dlp** | Video Downloads | Latest |
-| **instagrapi** | Instagram API | 2.0+ |
-| **MySQL** | Database | 8.0 |
-| **Nginx** | Web Server | Latest |
-| **V2Ray** | VPN Server | Latest |
-| **Squid** | Proxy Server | 5.x |
-| **Certbot** | SSL Certificates | Latest |
-
-</div>
+1. **Strong Passwords**: Use complex passwords (12+ characters)
+2. **Regular Updates**: Keep system and packages updated
+3. **Firewall**: Only open necessary ports
+4. **SSL/TLS**: Always use encryption when possible
+5. **Monitor Logs**: Regularly check for suspicious activity
+6. **Backup**: Automated daily backups
+7. **Limited Access**: Create separate users, don't share root
+8. **Change Defaults**: Change default ports if needed
 
 ---
 
-## 📊 Performance
+## 📈 Performance Optimization
 
-- ⚡ **Download Speed:** Up to 50MB/s
-- 🚀 **Bot Response Time:** < 1 second
-- 💾 **Memory Usage:** ~100MB
-- 🔄 **Concurrent Downloads:** Up to 10
-- ⏱️ **Uptime:** 99.9%
+### For High Traffic Servers
+```bash
+# Increase file descriptors
+echo "* soft nofile 65536" >> /etc/security/limits.conf
+echo "* hard nofile 65536" >> /etc/security/limits.conf
+
+# Optimize TCP settings
+cat >> /etc/sysctl.conf << EOF
+net.core.rmem_max = 134217728
+net.core.wmem_max = 134217728
+net.ipv4.tcp_rmem = 4096 87380 67108864
+net.ipv4.tcp_wmem = 4096 65536 67108864
+EOF
+
+sysctl -p
+```
+
+### Resource Limits
+
+**Recommended Limits:**
+- 50 users: 1GB RAM
+- 100 users: 2GB RAM
+- 500 users: 4GB RAM
+- 1000+ users: 8GB+ RAM
 
 ---
 
@@ -341,87 +633,98 @@ systemctl restart [service-name]
 
 We welcome contributions! Here's how:
 
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/AmazingFeature`)
-3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
-4. Push to the branch (`git push origin feature/AmazingFeature`)
-5. Open a Pull Request
+1. **Fork** the repository
+2. **Create** a feature branch (`git checkout -b feature/amazing-feature`)
+3. **Commit** your changes (`git commit -m 'Add amazing feature'`)
+4. **Push** to the branch (`git push origin feature/amazing-feature`)
+5. **Open** a Pull Request
+
+### Development Setup
+```bash
+git clone https://github.com/AndamAziz/vps-pro-maneger.git
+cd vps-pro-maneger
+# Make your changes
+./test.sh  # Run tests
+```
+
+---
+
+## 📝 Changelog
+
+### Version 5.0 (Latest)
+- ✅ Added SOCKS5 Proxy (Dante server)
+- ✅ Improved OpenVPN configs (Android compatible)
+- ✅ Fixed proxy authentication
+- ✅ Enhanced UI/UX
+- ✅ Performance improvements
+
+### Version 4.0
+- ✅ Added OpenVPN support
+- ✅ Dual port for V2Ray (443 + 87)
+- ✅ Database optimization
+- ✅ Statistics dashboard
+
+### Version 3.0
+- ✅ Added V2Ray VPN
+- ✅ Three protocols support
+- ✅ QR code generation
+- ✅ Auto-expire users
+
+### Version 2.0
+- ✅ Added Squid Proxy
+- ✅ Dual port support (3128 + 8080)
+- ✅ Traffic monitoring
+
+### Version 1.0
+- ✅ Initial release
+- ✅ SSH user management
+- ✅ Basic features
 
 ---
 
 ## 📄 License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-```
-MIT License - Free to use, modify, and distribute
-```
+
+---
+
+## 👨‍💻 Author
+
+**Andam Aziz**
+- GitHub: [@AndamAziz](https://github.com/AndamAziz)
+- Project: [VPS Manager Pro](https://github.com/AndamAziz/vps-pro-maneger)
 
 ---
 
 ## 🙏 Acknowledgments
 
-**Developer:** [KurdCloud Team](https://kurdcloud.xyz)  
-**Telegram Bot:** [@ALLINONEBIGBOSSbot](https://t.me/ALLINONEBIGBOSSbot)
-
-**Powered by:**
-- [python-telegram-bot](https://github.com/python-telegram-bot/python-telegram-bot) - Telegram Bot Framework
-- [yt-dlp](https://github.com/yt-dlp/yt-dlp) - Universal Video Downloader
-- [instagrapi](https://github.com/adw0rd/instagrapi) - Instagram Private API
-- [V2Ray](https://www.v2ray.com/) - VPN Platform
-- [Squid](http://www.squid-cache.org/) - Proxy Server
+- V2Ray Project
+- OpenVPN Community
+- Dante SOCKS5 Server
+- Squid Proxy
+- Ubuntu Community
 
 ---
 
 ## 📞 Support
 
-<div align="center">
-
-**Need help? We're here for you!**
-
-[![GitHub Issues](https://img.shields.io/badge/GitHub-Issues-red?logo=github)](https://github.com/AndamAziz/vps-pro-maneger/issues)
-[![Telegram Bot](https://img.shields.io/badge/Telegram-Bot-blue?logo=telegram)](https://t.me/ALLINONEBIGBOSSbot)
-[![Email](https://img.shields.io/badge/Email-Support-green?logo=gmail)](mailto:support@kurdcloud.xyz)
-
-</div>
-
-- 🐛 **Bug Reports:** [GitHub Issues](https://github.com/AndamAziz/vps-pro-maneger/issues)
-- 💬 **Questions:** [@ALLINONEBIGBOSSbot](https://t.me/ALLINONEBIGBOSSbot)
-- 📧 **Email:** support@kurdcloud.xyz
-- 🌐 **Website:** [kurdcloud.xyz](https://kurdcloud.xyz)
+- **Issues**: [GitHub Issues](https://github.com/AndamAziz/vps-pro-maneger/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/AndamAziz/vps-pro-maneger/discussions)
 
 ---
 
 ## ⭐ Star History
 
-[![Star History Chart](https://api.star-history.com/svg?repos=AndamAziz/vps-pro-maneger&type=Date)](https://star-history.com/#AndamAziz/vps-pro-maneger&Date)
-
----
-
-## 🎯 Quick Links
-
-- [Installation Guide](#-quick-installation)
-- [Bot Commands](#-usage)
-- [Troubleshooting](#-troubleshooting)
-- [Configuration](#-configuration)
-- [Contributing](#-contributing)
+If you find this project useful, please consider giving it a star! ⭐
 
 ---
 
 <div align="center">
 
-### 🚀 Ready to get started?
-```bash
-curl -sSL https://raw.githubusercontent.com/AndamAziz/vps-pro-maneger/main/vps-manager-installer.sh | sudo bash
-```
+**Made with ❤️ by KurdCloud Team**
 
-**Made with ❤️ by [KurdCloud Team](https://kurdcloud.xyz)**
+**Kurdistan • Iraq • 2025**
 
-*Version 1.0.0 • Last Updated: November 2025*
-
----
-
-If you find this project useful, please consider giving it a ⭐!
-
-[![GitHub stars](https://img.shields.io/github/stars/AndamAziz/vps-pro-maneger?style=social)](https://github.com/AndamAziz/vps-pro-maneger/stargazers)
+[⬆ Back to Top](#-vps-manager-pro-v50)
 
 </div>
