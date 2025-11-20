@@ -37,20 +37,21 @@ show_main_menu() {
     echo -e "${WHITE}━━━ VPN & PROXY SERVICES ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo ""
     echo -e "${GREEN}1.${NC} ${CYAN}👤 SSH User Management${NC}"
-    echo -e "${GREEN}2.${NC} ${CYAN}🌐 Proxy User Management (Port 3128)${NC}"
+    echo -e "${GREEN}2.${NC} ${CYAN}🌐 Proxy User Management (Port 31210)${NC}"
     echo -e "${GREEN}3.${NC} ${CYAN}🔒 V2Ray VPN (VLESS/VMess/Trojan)${NC}"
     echo -e "${GREEN}4.${NC} ${CYAN}🔐 OpenVPN (UDP 1194 / TCP 1443)${NC}"
+echo -e "${GREEN}5.${NC} ${CYAN}🧦 SOCKS5 Proxy (Port 1080)${NC}"
     echo ""
     echo -e "${WHITE}━━━ SYSTEM MANAGEMENT ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo ""
-    echo -e "${GREEN}5.${NC} ${CYAN}🔑 SSL Certificate Management${NC}"
-    echo -e "${GREEN}6.${NC} ${CYAN}💾 Database Management${NC}"
-    echo -e "${GREEN}7.${NC} ${CYAN}📊 Statistics Dashboard${NC}"
+    echo -e "${GREEN}6.${NC} ${CYAN}🔑 SSL Certificate Management${NC}"
+    echo -e "${GREEN}7.${NC} ${CYAN}💾 Database Management${NC}"
+    echo -e "${GREEN}8.${NC} ${CYAN}📊 Statistics Dashboard${NC}"
     echo ""
     echo -e "${WHITE}━━━ QUICK ACTIONS ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo ""
-    echo -e "${GREEN}8.${NC} ${YELLOW}⚡ Quick Status${NC}"
-    echo -e "${GREEN}9.${NC} ${YELLOW}🔄 Restart All Services${NC}"
+    echo -e "${GREEN}9.${NC} ${YELLOW}⚡ Quick Status${NC}"
+    echo -e "${GREEN}10.${NC} ${YELLOW}🔄 Restart All Services${NC}"
     echo ""
     echo -e "${GREEN}0.${NC} ${RED}Exit${NC}"
     echo ""
@@ -117,6 +118,14 @@ main() {
                 fi
                 ;;
             4)
+            10)
+                if [ -f "$SCRIPT_DIR/socks5_manager.sh" ]; then
+                    bash "$SCRIPT_DIR/socks5_manager.sh"
+                else
+                    echo -e "${RED}SOCKS5 manager not found${NC}"
+                    read -p "Press enter..."
+                fi
+                ;;
                 if [ -f "$SCRIPT_DIR/openvpn_manager.sh" ]; then
                     bash "$SCRIPT_DIR/openvpn_manager.sh"
                 else
@@ -124,7 +133,7 @@ main() {
                     read -p "Press enter..."
                 fi
                 ;;
-            5)
+            10)
                 if [ -f "$SCRIPT_DIR/ssl_manager.sh" ]; then
                     bash "$SCRIPT_DIR/ssl_manager.sh"
                 else
@@ -132,7 +141,7 @@ main() {
                     read -p "Press enter..."
                 fi
                 ;;
-            6)
+            10)
                 if [ -f "$SCRIPT_DIR/database_manager.sh" ]; then
                     bash "$SCRIPT_DIR/database_manager.sh"
                 else
@@ -140,7 +149,7 @@ main() {
                     read -p "Press enter..."
                 fi
                 ;;
-            7)
+            10)
                 if [ -f "$SCRIPT_DIR/stats_dashboard.sh" ]; then
                     bash "$SCRIPT_DIR/stats_dashboard.sh"
                 else
@@ -148,11 +157,11 @@ main() {
                     read -p "Press enter..."
                 fi
                 ;;
-            8)
+            10)
                 quick_status
                 read -p "Press enter..."
                 ;;
-            9)
+            10)
                 restart_all
                 read -p "Press enter..."
                 ;;
