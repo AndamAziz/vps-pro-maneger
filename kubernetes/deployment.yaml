@@ -1,0 +1,45 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vps-manager-bot
+  labels:
+    app: vps-manager-bot
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: vps-manager-bot
+  template:
+    metadata:
+      labels:
+        app: vps-manager-bot
+    spec:
+      containers:
+      - name: bot
+        image: vps-manager-pro:latest
+        env:
+        - name: BOT_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: vps-manager-secrets
+              key: bot-token
+        - name: INSTAGRAM_USERNAME
+          valueFrom:
+            secretKeyRef:
+              name: vps-manager-secrets
+              key: instagram-username
+        - name: INSTAGRAM_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: vps-manager-secrets
+              key: instagram-password
+        volumeMounts:
+        - name: downloads
+          mountPath: /app/downloads
+        - name: logs
+          mountPath: /app/logs
+      volumes:
+      - name: downloads
+        emptyDir: {}
+      - name: logs
+        emptyDir: {}
