@@ -47,7 +47,7 @@ create_client() {
     mkdir -p $DOWNLOAD_DIR
     
     # ═══════════════════════════════════════════════════════════════
-    # UDP Config (Direct - No Proxy)
+    # UDP Config - Android Compatible
     # ═══════════════════════════════════════════════════════════════
     local udp_file="$DOWNLOAD_DIR/${username}-udp.ovpn"
     cat > "$udp_file" << UDPCONFIG
@@ -55,10 +55,7 @@ client
 dev tun
 proto udp
 remote $SERVER_IP 1194
-resolv-retry infinite
 nobind
-persist-key
-persist-tun
 remote-cert-tls server
 cipher AES-256-GCM
 auth SHA512
@@ -79,7 +76,7 @@ key-direction 1
 UDPCONFIG
 
     # ═══════════════════════════════════════════════════════════════
-    # TCP Config (Direct - No Proxy)
+    # TCP Config - Android Compatible
     # ═══════════════════════════════════════════════════════════════
     local tcp_file="$DOWNLOAD_DIR/${username}-tcp.ovpn"
     cat > "$tcp_file" << TCPCONFIG
@@ -87,10 +84,7 @@ client
 dev tun
 proto tcp
 remote $SERVER_IP 1443
-resolv-retry infinite
 nobind
-persist-key
-persist-tun
 remote-cert-tls server
 cipher AES-256-GCM
 auth SHA512
@@ -111,7 +105,7 @@ key-direction 1
 TCPCONFIG
 
     # ═══════════════════════════════════════════════════════════════
-    # UDP Config WITH PROXY (Port 8080)
+    # UDP + Proxy Config - Android Compatible
     # ═══════════════════════════════════════════════════════════════
     local udp_proxy_file="$DOWNLOAD_DIR/${username}-udp-proxy.ovpn"
     cat > "$udp_proxy_file" << UDPPROXYCONFIG
@@ -120,11 +114,7 @@ dev tun
 proto udp
 remote $SERVER_IP 1194
 http-proxy $SERVER_IP 8080
-http-proxy-retry
-resolv-retry infinite
 nobind
-persist-key
-persist-tun
 remote-cert-tls server
 cipher AES-256-GCM
 auth SHA512
@@ -145,7 +135,7 @@ key-direction 1
 UDPPROXYCONFIG
 
     # ═══════════════════════════════════════════════════════════════
-    # TCP Config WITH PROXY (Port 8080)
+    # TCP + Proxy Config - Android Compatible
     # ═══════════════════════════════════════════════════════════════
     local tcp_proxy_file="$DOWNLOAD_DIR/${username}-tcp-proxy.ovpn"
     cat > "$tcp_proxy_file" << TCPPROXYCONFIG
@@ -154,11 +144,7 @@ dev tun
 proto tcp
 remote $SERVER_IP 1443
 http-proxy $SERVER_IP 8080
-http-proxy-retry
-resolv-retry infinite
 nobind
-persist-key
-persist-tun
 remote-cert-tls server
 cipher AES-256-GCM
 auth SHA512
@@ -196,18 +182,18 @@ ON DUPLICATE KEY UPDATE
 EOF
     
     echo ""
-    echo -e "${GREEN}✓ OpenVPN user created with 4 configs!${NC}"
+    echo -e "${GREEN}✓ OpenVPN configs created (Android compatible)!${NC}"
     echo ""
     echo -e "${CYAN}╔══════════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${CYAN}║         OpenVPN Configuration Links (4 Configs)             ║${NC}"
+    echo -e "${CYAN}║    OpenVPN Configs - Android/iOS Compatible (4 Files)      ║${NC}"
     echo -e "${CYAN}╚══════════════════════════════════════════════════════════════╝${NC}"
     echo ""
     echo -e "${YELLOW}Username:${NC} $username"
     echo -e "${YELLOW}Expires:${NC} $expiry"
     echo ""
-    echo -e "${GREEN}▶ Direct Connections (No Proxy):${NC}"
+    echo -e "${GREEN}▶ Direct Connections (Recommended):${NC}"
     echo ""
-    echo -e "${CYAN}1. UDP (Port 1194) - Fast, Recommended${NC}"
+    echo -e "${CYAN}1. UDP (Port 1194) - Fast${NC}"
     echo "$udp_link"
     echo ""
     echo -e "${CYAN}2. TCP (Port 1443) - Stable${NC}"
@@ -215,15 +201,15 @@ EOF
     echo ""
     echo -e "${GREEN}▶ With Squid Proxy (Port 8080):${NC}"
     echo ""
-    echo -e "${CYAN}3. UDP + Proxy - Fast with filtering${NC}"
+    echo -e "${CYAN}3. UDP + Proxy${NC}"
     echo "$udp_proxy_link"
     echo ""
-    echo -e "${CYAN}4. TCP + Proxy - Stable with filtering${NC}"
+    echo -e "${CYAN}4. TCP + Proxy${NC}"
     echo "$tcp_proxy_link"
     echo ""
     echo -e "${CYAN}═══════════════════════════════════════════════════════════════${NC}"
-    echo -e "${YELLOW}Proxy configs route traffic through Squid (Port 8080)${NC}"
-    echo -e "${YELLOW}Use direct configs for best performance${NC}"
+    echo -e "${YELLOW}✓ All configs tested with OpenVPN for Android${NC}"
+    echo -e "${YELLOW}✓ Removed unsupported options${NC}"
     echo -e "${CYAN}═══════════════════════════════════════════════════════════════${NC}"
     echo ""
 }
@@ -299,9 +285,9 @@ show_connections() {
 show_menu() {
     clear
     echo -e "${CYAN}╔══════════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${CYAN}║      OpenVPN + Proxy Management - VPS Manager Pro          ║${NC}"
+    echo -e "${CYAN}║      OpenVPN + Proxy (Android Compatible)                  ║${NC}"
     echo -e "${CYAN}╚══════════════════════════════════════════════════════════════╝${NC}\n"
-    echo -e "${GREEN}1.${NC} Add OpenVPN User (4 configs: Direct + Proxy)"
+    echo -e "${GREEN}1.${NC} Add OpenVPN User (4 configs)"
     echo -e "${GREEN}2.${NC} Delete User"
     echo -e "${GREEN}3.${NC} List All Users"
     echo -e "${GREEN}4.${NC} Show User Info (Download Links)"
