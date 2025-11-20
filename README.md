@@ -4,12 +4,18 @@
 
 ### Complete VPS Management System with Advanced Telegram Bot
 
+[![CI/CD](https://github.com/AndamAziz/vps-pro-maneger/workflows/CI/CD%20Pipeline/badge.svg)](https://github.com/AndamAziz/vps-pro-maneger/actions)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
 [![Platform](https://img.shields.io/badge/Platform-Ubuntu%2020.04%2B-orange.svg)](https://ubuntu.com/)
 [![Python](https://img.shields.io/badge/Python-3.8%2B-blue.svg)](https://www.python.org/)
 [![Telegram](https://img.shields.io/badge/Telegram-Bot-2CA5E0?logo=telegram&logoColor=white)](https://t.me/ALLINONEBIGBOSSbot)
+[![Docker](https://img.shields.io/badge/Docker-Ready-2496ED?logo=docker&logoColor=white)](https://www.docker.com/)
 
 [Features](#-features) • [Installation](#-quick-installation) • [Usage](#-usage) • [Documentation](#-documentation) • [Support](#-support)
+
+<img src="https://img.shields.io/badge/Status-Production%20Ready-success?style=for-the-badge" alt="Status">
+
+</div>
 
 <img src="https://img.shields.io/badge/Status-Production%20Ready-success?style=for-the-badge" alt="Status">
 

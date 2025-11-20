@@ -1,33 +1,16 @@
-# Git
 .git
 .gitignore
-
-# Python
 __pycache__
 *.pyc
 *.pyo
-*.pyd
 venv/
 env/
-
-# Logs
 *.log
 logs/
-
-# Downloads
 downloads/
-
-# Session files
 .instagram_session.json
-
-# IDE
 .vscode/
 .idea/
-
-# Documentation
 *.md
 LICENSE
-
-# OS
 .DS_Store
-Thumbs.db
