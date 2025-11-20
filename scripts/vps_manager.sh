@@ -25,7 +25,7 @@ show_banner() {
 ║    ╚████╔╝ ██║     ███████║    ██║ ╚═╝ ██║╚██████╔╝██║  ██║ ║
 ║     ╚═══╝  ╚═╝     ╚══════╝    ╚═╝     ╚═╝ ╚═════╝ ╚═╝  ╚═╝ ║
 ║                                                              ║
-║                    VPS MANAGER PRO v4.0                      ║
+║                    VPS MANAGER PRO v5.0                      ║
 ║                   KurdCloud Team © 2025                      ║
 ║                                                              ║
 ╚══════════════════════════════════════════════════════════════╝
@@ -37,10 +37,10 @@ show_main_menu() {
     echo -e "${WHITE}━━━ VPN & PROXY SERVICES ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo ""
     echo -e "${GREEN}1.${NC} ${CYAN}👤 SSH User Management${NC}"
-    echo -e "${GREEN}2.${NC} ${CYAN}🌐 Proxy User Management (Port 31210)${NC}"
+    echo -e "${GREEN}2.${NC} ${CYAN}🌐 Squid HTTP Proxy (Port 3128, 8080)${NC}"
     echo -e "${GREEN}3.${NC} ${CYAN}🔒 V2Ray VPN (VLESS/VMess/Trojan)${NC}"
     echo -e "${GREEN}4.${NC} ${CYAN}🔐 OpenVPN (UDP 1194 / TCP 1443)${NC}"
-echo -e "${GREEN}5.${NC} ${CYAN}🧦 SOCKS5 Proxy (Port 1080)${NC}"
+    echo -e "${GREEN}5.${NC} ${CYAN}🧦 SOCKS5 Proxy (Port 1080)${NC}"
     echo ""
     echo -e "${WHITE}━━━ SYSTEM MANAGEMENT ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo ""
@@ -68,6 +68,7 @@ quick_status() {
     systemctl is-active --quiet squid && echo "  Squid:    ✓ Running" || echo "  Squid:    ✗ Stopped"
     systemctl is-active --quiet v2ray && echo "  V2Ray:    ✓ Running" || echo "  V2Ray:    ✗ Stopped"
     systemctl is-active --quiet openvpn-server@server-udp && echo "  OpenVPN:  ✓ Running" || echo "  OpenVPN:  ✗ Stopped"
+    systemctl is-active --quiet danted && echo "  SOCKS5:   ✓ Running" || echo "  SOCKS5:   ✗ Stopped"
     echo ""
     echo -e "${CYAN}Resources:${NC}"
     echo "  CPU:      $(top -bn1 | grep "Cpu(s)" | awk '{print $2}')%"
@@ -83,6 +84,7 @@ restart_all() {
     systemctl restart v2ray 2>/dev/null && echo "✓ V2Ray" || echo "✗ V2Ray"
     systemctl restart openvpn-server@server-udp 2>/dev/null && echo "✓ OpenVPN UDP" || echo "✗ OpenVPN UDP"
     systemctl restart openvpn-server@server-tcp 2>/dev/null && echo "✓ OpenVPN TCP" || echo "✗ OpenVPN TCP"
+    systemctl restart danted 2>/dev/null && echo "✓ SOCKS5" || echo "✗ SOCKS5"
     echo -e "${GREEN}Done!${NC}"
 }
 
@@ -118,14 +120,6 @@ main() {
                 fi
                 ;;
             4)
-            10)
-                if [ -f "$SCRIPT_DIR/socks5_manager.sh" ]; then
-                    bash "$SCRIPT_DIR/socks5_manager.sh"
-                else
-                    echo -e "${RED}SOCKS5 manager not found${NC}"
-                    read -p "Press enter..."
-                fi
-                ;;
                 if [ -f "$SCRIPT_DIR/openvpn_manager.sh" ]; then
                     bash "$SCRIPT_DIR/openvpn_manager.sh"
                 else
@@ -133,7 +127,15 @@ main() {
                     read -p "Press enter..."
                 fi
                 ;;
-            10)
+            5)
+                if [ -f "$SCRIPT_DIR/socks5_manager.sh" ]; then
+                    bash "$SCRIPT_DIR/socks5_manager.sh"
+                else
+                    echo -e "${RED}SOCKS5 manager not found${NC}"
+                    read -p "Press enter..."
+                fi
+                ;;
+            6)
                 if [ -f "$SCRIPT_DIR/ssl_manager.sh" ]; then
                     bash "$SCRIPT_DIR/ssl_manager.sh"
                 else
@@ -141,7 +143,7 @@ main() {
                     read -p "Press enter..."
                 fi
                 ;;
-            10)
+            7)
                 if [ -f "$SCRIPT_DIR/database_manager.sh" ]; then
                     bash "$SCRIPT_DIR/database_manager.sh"
                 else
@@ -149,7 +151,7 @@ main() {
                     read -p "Press enter..."
                 fi
                 ;;
-            10)
+            8)
                 if [ -f "$SCRIPT_DIR/stats_dashboard.sh" ]; then
                     bash "$SCRIPT_DIR/stats_dashboard.sh"
                 else
@@ -157,7 +159,7 @@ main() {
                     read -p "Press enter..."
                 fi
                 ;;
-            10)
+            9)
                 quick_status
                 read -p "Press enter..."
                 ;;
