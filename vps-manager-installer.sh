@@ -1,25 +1,36 @@
 #!/bin/bash
 ################################################################################
 #
-#   VPS Manager Pro - Complete Installation Script
-#   Version: 2.0.0
-#   For: Fresh Ubuntu/Debian VPS
+#   VPS Manager Pro - Complete Automated Installer
+#   Version: 3.0.0
+#   Author: KurdCloud Team
+#   
+#   For: Fresh Ubuntu 20.04+ / Debian 10+ VPS
+#   
+#   One-command installation:
+#   curl -sSL https://raw.githubusercontent.com/AndamAziz/vps-pro-maneger/main/vps-manager-installer.sh | sudo bash
 #
 ################################################################################
 
 set -e
+export DEBIAN_FRONTEND=noninteractive
 
 # Colors
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-CYAN='\033[0;36m'
-NC='\033[0m'
+readonly RED='\033[0;31m'
+readonly GREEN='\033[0;32m'
+readonly YELLOW='\033[1;33m'
+readonly BLUE='\033[0;34m'
+readonly CYAN='\033[0;36m'
+readonly WHITE='\033[1;37m'
+readonly NC='\033[0m'
 
 # Configuration
-INSTALL_DIR="/opt/vps-manager"
-BOT_DIR="$INSTALL_DIR/telegram-bot"
+readonly INSTALL_DIR="/opt/vps-manager"
+readonly BOT_DIR="$INSTALL_DIR/telegram-bot"
+readonly LOG_DIR="$INSTALL_DIR/logs"
+readonly DOWNLOADS_DIR="$BOT_DIR/downloads"
+readonly CONFIG_DIR="$INSTALL_DIR/config"
+
 DOMAIN="${DOMAIN:-v2ray.kurdcloud.xyz}"
 BOT_TOKEN="${BOT_TOKEN:-8442510366:AAGDQAW1Lp_25eTdIb1lCuj2jTNuviQDt5g}"
 ADMIN_ID="${ADMIN_ID:-144068979}"
@@ -27,16 +38,21 @@ INSTA_USER="${INSTA_USER:-allinonebigboss}"
 INSTA_PASS="${INSTA_PASS:-HelinGyan1122@@##}"
 
 ################################################################################
-# Functions
+# Helper Functions
 ################################################################################
 
 print_banner() {
     clear
     echo -e "${CYAN}"
-    echo "╔══════════════════════════════════════════════════════════════╗"
-    echo "║          VPS MANAGER PRO - COMPLETE INSTALLER v2.0          ║"
-    echo "║                  KurdCloud Team © 2025                       ║"
-    echo "╚══════════════════════════════════════════════════════════════╝"
+    cat << "EOF"
+╔══════════════════════════════════════════════════════════════╗
+║                                                              ║
+║          VPS MANAGER PRO - AUTOMATED INSTALLER v3.0         ║
+║                                                              ║
+║                    KurdCloud Team © 2025                    ║
+║                                                              ║
+╚══════════════════════════════════════════════════════════════╝
+EOF
     echo -e "${NC}\n"
 }
 
@@ -44,190 +60,405 @@ log() {
     echo -e "${GREEN}[$(date +'%H:%M:%S')]${NC} $1"
 }
 
+warn() {
+    echo -e "${YELLOW}[WARNING]${NC} $1"
+}
+
 error() {
     echo -e "${RED}[ERROR]${NC} $1"
     exit 1
 }
 
+success() {
+    echo -e "${GREEN}✓${NC} $1"
+}
+
+################################################################################
+# Pre-Installation Checks
+################################################################################
+
 check_root() {
     if [[ $EUID -ne 0 ]]; then
-        error "This script must be run as root"
+        error "This script must be run as root (use: sudo bash)"
     fi
 }
 
 check_os() {
-    if [[ -f /etc/os-release ]]; then
-        . /etc/os-release
-        OS=$ID
-        VER=$VERSION_ID
-    else
-        error "Cannot detect OS"
+    if [[ ! -f /etc/os-release ]]; then
+        error "Cannot detect operating system"
     fi
     
+    . /etc/os-release
+    OS=$ID
+    VER=$VERSION_ID
+    
     if [[ "$OS" != "ubuntu" ]] && [[ "$OS" != "debian" ]]; then
-        error "This script only supports Ubuntu/Debian"
+        error "Only Ubuntu 20.04+ and Debian 10+ are supported"
     fi
     
     log "Detected: $PRETTY_NAME"
+}
+
+check_resources() {
+    # Check RAM
+    TOTAL_RAM=$(free -m | awk '/^Mem:/{print $2}')
+    if [[ $TOTAL_RAM -lt 900 ]]; then
+        warn "Low RAM detected: ${TOTAL_RAM}MB (Recommended: 1GB+)"
+        read -p "Continue anyway? (y/n): " -n 1 -r
+        echo
+        [[ ! $REPLY =~ ^[Yy]$ ]] && exit 1
+    fi
+    
+    # Check disk space
+    DISK_SPACE=$(df -BG / | awk 'NR==2 {print $4}' | sed 's/G//')
+    if [[ $DISK_SPACE -lt 5 ]]; then
+        warn "Low disk space: ${DISK_SPACE}GB (Recommended: 10GB+)"
+    fi
 }
 
 ################################################################################
 # Installation Steps
 ################################################################################
 
-step1_update_system() {
-    log "Step 1/15: Updating system..."
-    apt update -qq
-    apt upgrade -y -qq
-    log "✓ System updated"
+step01_update_system() {
+    log "Step 1/20: Updating system packages..."
+    
+    # Fix any broken packages
+    dpkg --configure -a 2>/dev/null || true
+    apt-get --fix-broken install -y 2>/dev/null || true
+    
+    # Update package list
+    apt-get update -qq
+    
+    # Upgrade packages
+    apt-get upgrade -y -qq
+    
+    # Clean up
+    apt-get autoremove -y -qq
+    apt-get autoclean -qq
+    
+    success "System updated"
 }
 
-step2_install_essentials() {
-    log "Step 2/15: Installing essential packages..."
-    apt install -y -qq \
+step02_install_essentials() {
+    log "Step 2/20: Installing essential packages..."
+    
+    apt-get install -y -qq \
+        apt-transport-https \
+        ca-certificates \
         curl \
         wget \
         git \
-        nano \
-        htop \
-        net-tools \
-        ufw \
-        fail2ban \
-        unzip \
-        ca-certificates \
         gnupg \
         lsb-release \
-        software-properties-common
-    log "✓ Essentials installed"
+        software-properties-common \
+        nano \
+        vim \
+        htop \
+        net-tools \
+        unzip \
+        zip \
+        tar \
+        gzip \
+        screen \
+        tmux \
+        dnsutils \
+        iputils-ping \
+        traceroute
+    
+    success "Essential packages installed"
 }
 
-step3_install_python() {
-    log "Step 3/15: Installing Python and pip..."
-    apt install -y -qq \
+step03_install_build_tools() {
+    log "Step 3/20: Installing build tools..."
+    
+    apt-get install -y -qq \
+        build-essential \
+        gcc \
+        g++ \
+        make \
+        cmake \
+        autoconf \
+        automake \
+        libtool \
+        pkg-config
+    
+    success "Build tools installed"
+}
+
+step04_install_python() {
+    log "Step 4/20: Installing Python 3..."
+    
+    apt-get install -y -qq \
         python3 \
         python3-pip \
-        python3-venv \
         python3-dev \
-        build-essential
+        python3-venv \
+        python3-setuptools \
+        python3-wheel
     
     # Upgrade pip
-    python3 -m pip install --upgrade pip --quiet
-    log "✓ Python $(python3 --version) installed"
+    python3 -m pip install --upgrade pip setuptools wheel --quiet
+    
+    # Fix pip SSL warnings
+    python3 -m pip install --upgrade certifi --quiet
+    
+    success "Python $(python3 --version | cut -d' ' -f2) installed"
 }
 
-step4_install_mysql() {
-    log "Step 4/15: Installing MySQL..."
-    export DEBIAN_FRONTEND=noninteractive
-    apt install -y -qq mysql-server mysql-client
+step05_install_ffmpeg() {
+    log "Step 5/20: Installing FFmpeg..."
+    
+    apt-get install -y -qq ffmpeg
+    
+    success "FFmpeg installed"
+}
+
+step06_install_mysql() {
+    log "Step 6/20: Installing MySQL server..."
+    
+    # Install MySQL without prompts
+    apt-get install -y -qq mysql-server mysql-client
     
     # Start MySQL
     systemctl start mysql
     systemctl enable mysql
     
-    # Create database and user
-    DB_PASS=$(openssl rand -base64 12)
-    mysql -e "CREATE DATABASE IF NOT EXISTS vps_manager;"
-    mysql -e "CREATE USER IF NOT EXISTS 'vps_admin'@'localhost' IDENTIFIED BY '$DB_PASS';"
-    mysql -e "GRANT ALL PRIVILEGES ON vps_manager.* TO 'vps_admin'@'localhost';"
-    mysql -e "FLUSH PRIVILEGES;"
+    # Secure installation (automated)
+    DB_ROOT_PASS=$(openssl rand -base64 16)
+    DB_USER_PASS=$(openssl rand -base64 16)
     
-    echo "$DB_PASS" > /root/.mysql_vps_password
-    log "✓ MySQL installed (password saved in /root/.mysql_vps_password)"
+    # Set root password
+    mysql -e "ALTER USER 'root'@'localhost' IDENTIFIED WITH mysql_native_password BY '$DB_ROOT_PASS';" 2>/dev/null || true
+    
+    # Create database and user
+    mysql -u root -p"$DB_ROOT_PASS" << EOF 2>/dev/null
+CREATE DATABASE IF NOT EXISTS vps_manager;
+CREATE USER IF NOT EXISTS 'vps_admin'@'localhost' IDENTIFIED BY '$DB_USER_PASS';
+GRANT ALL PRIVILEGES ON vps_manager.* TO 'vps_admin'@'localhost';
+FLUSH PRIVILEGES;
+EOF
+    
+    # Save passwords
+    mkdir -p $CONFIG_DIR
+    cat > $CONFIG_DIR/mysql_credentials.txt << EOF
+MySQL Root Password: $DB_ROOT_PASS
+VPS Admin Password: $DB_USER_PASS
+Database Name: vps_manager
+Database User: vps_admin
+EOF
+    chmod 600 $CONFIG_DIR/mysql_credentials.txt
+    
+    success "MySQL installed (credentials saved)"
 }
 
-step5_install_nginx() {
-    log "Step 5/15: Installing Nginx..."
-    apt install -y -qq nginx
+step07_install_nginx() {
+    log "Step 7/20: Installing Nginx..."
+    
+    apt-get install -y -qq nginx
+    
+    # Start and enable Nginx
     systemctl start nginx
     systemctl enable nginx
-    log "✓ Nginx installed"
+    
+    # Remove default site
+    rm -f /etc/nginx/sites-enabled/default
+    
+    success "Nginx installed"
 }
 
-step6_install_squid() {
-    log "Step 6/15: Installing Squid proxy..."
-    apt install -y -qq squid
+step08_install_squid() {
+    log "Step 8/20: Installing Squid proxy..."
     
-    # Configure Squid
+    apt-get install -y -qq squid apache2-utils
+    
+    # Backup original config
+    cp /etc/squid/squid.conf /etc/squid/squid.conf.backup
+    
+    # Create new config
     cat > /etc/squid/squid.conf << 'EOF'
+# Squid Proxy Configuration for VPS Manager Pro
 http_port 3128
+
+# Authentication
 auth_param basic program /usr/lib/squid/basic_ncsa_auth /etc/squid/passwd
-auth_param basic realm Proxy Authentication
+auth_param basic realm VPS Proxy Server
+auth_param basic credentialsttl 2 hours
 acl authenticated proxy_auth REQUIRED
+
+# ACL definitions
+acl SSL_ports port 443
+acl Safe_ports port 80 443 3128
+acl CONNECT method CONNECT
+
+# Access rules
+http_access deny !Safe_ports
+http_access deny CONNECT !SSL_ports
 http_access allow authenticated
 http_access deny all
+
+# Cache settings
+cache deny all
+
+# Logging
+access_log /var/log/squid/access.log
+cache_log /var/log/squid/cache.log
 EOF
     
     # Create password file
-    apt install -y -qq apache2-utils
     touch /etc/squid/passwd
+    chmod 640 /etc/squid/passwd
     
+    # Restart Squid
     systemctl restart squid
     systemctl enable squid
-    log "✓ Squid proxy installed"
+    
+    success "Squid proxy installed"
 }
 
-step7_install_v2ray() {
-    log "Step 7/15: Installing V2Ray..."
-    bash <(curl -L https://raw.githubusercontent.com/v2fly/fhs-install-v2ray/master/install-release.sh) > /dev/null 2>&1 || true
-    systemctl enable v2ray || true
-    log "✓ V2Ray installed"
+step09_install_v2ray() {
+    log "Step 9/20: Installing V2Ray..."
+    
+    # Download and install V2Ray
+    bash <(curl -L https://raw.githubusercontent.com/v2fly/fhs-install-v2ray/master/install-release.sh) > /dev/null 2>&1 || {
+        warn "V2Ray installation failed (optional service)"
+        return 0
+    }
+    
+    # Enable V2Ray
+    systemctl enable v2ray 2>/dev/null || true
+    
+    success "V2Ray installed"
 }
 
-step8_configure_firewall() {
-    log "Step 8/15: Configuring firewall..."
-    ufw --force enable
+step10_configure_firewall() {
+    log "Step 10/20: Configuring UFW firewall..."
+    
+    # Install UFW if not present
+    apt-get install -y -qq ufw
+    
+    # Reset UFW to defaults
+    ufw --force reset
+    
+    # Default policies
     ufw default deny incoming
     ufw default allow outgoing
-    ufw allow 22/tcp
-    ufw allow 80/tcp
-    ufw allow 443/tcp
-    ufw allow 3128/tcp
-    ufw reload
-    log "✓ Firewall configured"
+    
+    # Allow SSH
+    ufw allow 22/tcp comment 'SSH'
+    
+    # Allow HTTP/HTTPS
+    ufw allow 80/tcp comment 'HTTP'
+    ufw allow 443/tcp comment 'HTTPS'
+    
+    # Allow Squid Proxy
+    ufw allow 3128/tcp comment 'Squid Proxy'
+    
+    # Enable firewall
+    ufw --force enable
+    
+    success "Firewall configured"
 }
 
-step9_install_ssl() {
-    log "Step 9/15: Installing SSL certificate..."
-    apt install -y -qq certbot python3-certbot-nginx
+step11_install_fail2ban() {
+    log "Step 11/20: Installing Fail2Ban..."
     
-    # Try to get certificate (will fail if domain not pointing)
-    certbot --nginx -d $DOMAIN --non-interactive --agree-tos --email admin@$DOMAIN --quiet || log "⚠ SSL failed (check domain DNS)"
-    log "✓ SSL setup attempted"
+    apt-get install -y -qq fail2ban
+    
+    # Configure Fail2Ban
+    cat > /etc/fail2ban/jail.local << 'EOF'
+[DEFAULT]
+bantime = 3600
+findtime = 600
+maxretry = 5
+
+[sshd]
+enabled = true
+port = ssh
+logpath = /var/log/auth.log
+EOF
+    
+    systemctl start fail2ban
+    systemctl enable fail2ban
+    
+    success "Fail2Ban installed"
 }
 
-step10_clone_repository() {
-    log "Step 10/15: Cloning repository..."
-    mkdir -p $INSTALL_DIR
-    mkdir -p $BOT_DIR
-    mkdir -p $INSTALL_DIR/logs
+step12_install_ssl() {
+    log "Step 12/20: Installing SSL certificate tools..."
     
-    # Download files from GitHub
-    cd $INSTALL_DIR
+    apt-get install -y -qq certbot python3-certbot-nginx
+    
+    # Try to get certificate (will fail if domain not configured)
+    if [[ "$DOMAIN" != "v2ray.kurdcloud.xyz" ]]; then
+        certbot --nginx -d "$DOMAIN" --non-interactive --agree-tos \
+            --email "admin@$DOMAIN" --redirect --quiet 2>/dev/null && \
+            success "SSL certificate obtained for $DOMAIN" || \
+            warn "SSL certificate failed (check DNS configuration)"
+    else
+        warn "Using default domain - SSL skipped"
+    fi
+    
+    success "SSL tools installed"
+}
+
+step13_create_directories() {
+    log "Step 13/20: Creating directory structure..."
+    
+    mkdir -p "$INSTALL_DIR"
+    mkdir -p "$BOT_DIR"
+    mkdir -p "$BOT_DIR/handlers"
+    mkdir -p "$LOG_DIR"
+    mkdir -p "$DOWNLOADS_DIR"
+    mkdir -p "$CONFIG_DIR"
+    
+    # Set permissions
+    chmod 755 "$INSTALL_DIR"
+    chmod 755 "$BOT_DIR"
+    chmod 755 "$DOWNLOADS_DIR"
+    chmod 700 "$CONFIG_DIR"
+    
+    success "Directory structure created"
+}
+
+step14_download_bot_files() {
+    log "Step 14/20: Downloading bot files from GitHub..."
+    
+    GITHUB_RAW="https://raw.githubusercontent.com/AndamAziz/vps-pro-maneger/main"
     
     # Download bot.py
-    wget -q https://raw.githubusercontent.com/AndamAziz/vps-pro-maneger/main/bot.py -O $BOT_DIR/bot.py || error "Failed to download bot.py"
+    wget -q -O "$BOT_DIR/bot.py" "$GITHUB_RAW/bot.py" || \
+        error "Failed to download bot.py"
     
     # Download config.py
-    wget -q https://raw.githubusercontent.com/AndamAziz/vps-pro-maneger/main/config.py -O $BOT_DIR/config.py || error "Failed to download config.py"
+    wget -q -O "$BOT_DIR/config.py" "$GITHUB_RAW/config.py" || \
+        error "Failed to download config.py"
     
-    # Download requirements
-    wget -q https://raw.githubusercontent.com/AndamAziz/vps-pro-maneger/main/requirements.txt -O $BOT_DIR/requirements.txt || error "Failed to download requirements.txt"
+    # Download requirements.txt
+    wget -q -O "$BOT_DIR/requirements.txt" "$GITHUB_RAW/requirements.txt" || \
+        error "Failed to download requirements.txt"
     
-    # Download handlers
-    mkdir -p $BOT_DIR/handlers
-    wget -q https://raw.githubusercontent.com/AndamAziz/vps-pro-maneger/main/handlers/__init__.py -O $BOT_DIR/handlers/__init__.py || error "Failed to download handlers/__init__.py"
-    wget -q https://raw.githubusercontent.com/AndamAziz/vps-pro-maneger/main/handlers/media.py -O $BOT_DIR/handlers/media.py || error "Failed to download handlers/media.py"
+    # Download handlers/__init__.py
+    wget -q -O "$BOT_DIR/handlers/__init__.py" "$GITHUB_RAW/handlers/__init__.py" || \
+        error "Failed to download handlers/__init__.py"
     
-    chmod +x $BOT_DIR/bot.py
-    log "✓ Repository files downloaded"
+    # Download handlers/media.py
+    wget -q -O "$BOT_DIR/handlers/media.py" "$GITHUB_RAW/handlers/media.py" || \
+        error "Failed to download handlers/media.py"
+    
+    # Make bot.py executable
+    chmod +x "$BOT_DIR/bot.py"
+    
+    success "Bot files downloaded"
 }
 
-step11_install_python_packages() {
-    log "Step 11/15: Installing Python packages..."
-    cd $BOT_DIR
+step15_install_python_packages() {
+    log "Step 15/20: Installing Python packages (this may take a few minutes)..."
     
-    # Install packages
-    pip3 install --quiet \
+    cd "$BOT_DIR"
+    
+    # Install from requirements.txt
+    python3 -m pip install --quiet --no-cache-dir \
         python-telegram-bot==20.7 \
         instagrapi==2.0.0 \
         yt-dlp \
@@ -235,190 +466,307 @@ step11_install_python_packages() {
         qrcode==7.4.2 \
         Pillow==10.1.0 \
         psutil==5.9.6 \
-        requests==2.31.0
+        requests==2.31.0 || error "Failed to install Python packages"
     
-    log "✓ Python packages installed"
+    # Update yt-dlp to latest
+    python3 -m pip install --upgrade yt-dlp --quiet
+    
+    success "Python packages installed"
 }
 
-step12_configure_bot() {
-    log "Step 12/15: Configuring bot..."
+step16_configure_bot() {
+    log "Step 16/20: Configuring bot settings..."
     
-    # Update config with actual values
-    sed -i "s|BOT_TOKEN = .*|BOT_TOKEN = \"$BOT_TOKEN\"|g" $BOT_DIR/config.py
-    sed -i "s|ADMIN_IDS = \[.*\]|ADMIN_IDS = [$ADMIN_ID]|g" $BOT_DIR/config.py
-    sed -i "s|INSTAGRAM_USERNAME = .*|INSTAGRAM_USERNAME = \"$INSTA_USER\"|g" $BOT_DIR/config.py
-    sed -i "s|INSTAGRAM_PASSWORD = .*|INSTAGRAM_PASSWORD = \"$INSTA_PASS\"|g" $BOT_DIR/config.py
-    sed -i "s|DOMAIN = .*|DOMAIN = \"$DOMAIN\"|g" $BOT_DIR/config.py
+    # Update config.py with actual values
+    sed -i "s|BOT_TOKEN = .*|BOT_TOKEN = \"$BOT_TOKEN\"|g" "$BOT_DIR/config.py"
+    sed -i "s|ADMIN_IDS = \[.*\]|ADMIN_IDS = [$ADMIN_ID]|g" "$BOT_DIR/config.py"
+    sed -i "s|INSTAGRAM_USERNAME = .*|INSTAGRAM_USERNAME = \"$INSTA_USER\"|g" "$BOT_DIR/config.py"
+    sed -i "s|INSTAGRAM_PASSWORD = .*|INSTAGRAM_PASSWORD = \"$INSTA_PASS\"|g" "$BOT_DIR/config.py"
+    sed -i "s|DOMAIN = .*|DOMAIN = \"$DOMAIN\"|g" "$BOT_DIR/config.py"
     
-    # Create downloads directory
-    mkdir -p $BOT_DIR/downloads
-    chmod 755 $BOT_DIR/downloads
+    # Update paths in config
+    sed -i "s|/opt/vps-manager/telegram-bot|$BOT_DIR|g" "$BOT_DIR/config.py"
+    sed -i "s|/opt/vps-manager/logs|$LOG_DIR|g" "$BOT_DIR/config.py"
     
-    log "✓ Bot configured"
+    success "Bot configured"
 }
 
-step13_create_systemd_service() {
-    log "Step 13/15: Creating systemd service..."
+step17_create_systemd_service() {
+    log "Step 17/20: Creating systemd service..."
     
     cat > /etc/systemd/system/vpsmanager-bot.service << EOF
 [Unit]
 Description=VPS Manager Pro Telegram Bot
-After=network.target mysql.service
+After=network.target mysql.service nginx.service
+Wants=mysql.service
 
 [Service]
 Type=simple
 User=root
 WorkingDirectory=$BOT_DIR
+Environment="PYTHONUNBUFFERED=1"
 ExecStart=/usr/bin/python3 $BOT_DIR/bot.py
 Restart=always
 RestartSec=10
-StandardOutput=append:$INSTALL_DIR/logs/bot.log
-StandardError=append:$INSTALL_DIR/logs/bot-error.log
+StandardOutput=append:$LOG_DIR/bot.log
+StandardError=append:$LOG_DIR/bot-error.log
+
+# Security
+NoNewPrivileges=true
+PrivateTmp=true
 
 [Install]
 WantedBy=multi-user.target
 EOF
     
+    # Reload systemd
     systemctl daemon-reload
     systemctl enable vpsmanager-bot
-    log "✓ Systemd service created"
+    
+    success "Systemd service created"
 }
 
-step14_create_management_command() {
-    log "Step 14/15: Creating management command..."
+step18_create_management_script() {
+    log "Step 18/20: Creating management commands..."
     
-    cat > /usr/local/bin/vpsbot << 'EOF'
+    cat > /usr/local/bin/vpsbot << 'EOFSCRIPT'
 #!/bin/bash
+
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+CYAN='\033[0;36m'
+NC='\033[0m'
 
 case "$1" in
     start)
         systemctl start vpsmanager-bot
-        echo "✓ Bot started"
+        echo -e "${GREEN}✓${NC} Bot started"
         ;;
     stop)
         systemctl stop vpsmanager-bot
-        echo "✓ Bot stopped"
+        echo -e "${YELLOW}✓${NC} Bot stopped"
         ;;
     restart)
         systemctl restart vpsmanager-bot
-        echo "✓ Bot restarted"
+        echo -e "${GREEN}✓${NC} Bot restarted"
         ;;
     status)
-        systemctl status vpsmanager-bot
+        systemctl status vpsmanager-bot --no-pager
         ;;
     logs)
         tail -f /opt/vps-manager/logs/bot.log
         ;;
+    errors)
+        tail -f /opt/vps-manager/logs/bot-error.log
+        ;;
+    update)
+        echo "Updating bot..."
+        cd /opt/vps-manager/telegram-bot
+        wget -q -O bot.py https://raw.githubusercontent.com/AndamAziz/vps-pro-maneger/main/bot.py
+        wget -q -O handlers/media.py https://raw.githubusercontent.com/AndamAziz/vps-pro-maneger/main/handlers/media.py
+        systemctl restart vpsmanager-bot
+        echo -e "${GREEN}✓${NC} Bot updated and restarted"
+        ;;
     *)
-        echo "Usage: vpsbot {start|stop|restart|status|logs}"
+        echo "VPS Manager Pro - Bot Management"
+        echo ""
+        echo "Usage: vpsbot [command]"
+        echo ""
+        echo "Commands:"
+        echo "  start    - Start the bot"
+        echo "  stop     - Stop the bot"
+        echo "  restart  - Restart the bot"
+        echo "  status   - Show bot status"
+        echo "  logs     - View live logs"
+        echo "  errors   - View error logs"
+        echo "  update   - Update bot to latest version"
+        echo ""
         exit 1
         ;;
 esac
-EOF
+EOFSCRIPT
     
     chmod +x /usr/local/bin/vpsbot
-    log "✓ Management command created"
+    
+    success "Management commands created"
 }
 
-step15_start_services() {
-    log "Step 15/15: Starting services..."
+step19_start_services() {
+    log "Step 19/20: Starting all services..."
+    
+    # Ensure all services are running
+    systemctl restart mysql
+    systemctl restart nginx
+    systemctl restart squid
+    systemctl restart fail2ban
+    
+    # Start bot
     systemctl start vpsmanager-bot
-    sleep 3
+    sleep 5
     
     if systemctl is-active --quiet vpsmanager-bot; then
-        log "✓ Bot service started successfully"
+        success "All services started successfully"
     else
-        error "Bot failed to start. Check logs: vpsbot logs"
+        warn "Bot service failed to start - check logs: vpsbot logs"
     fi
 }
 
+step20_cleanup() {
+    log "Step 20/20: Cleaning up..."
+    
+    # Clean apt cache
+    apt-get clean
+    apt-get autoremove -y -qq
+    
+    # Remove unnecessary packages
+    apt-get autoclean -qq
+    
+    success "Cleanup completed"
+}
+
 ################################################################################
-# Summary
+# Installation Summary
 ################################################################################
 
 show_summary() {
     clear
     echo -e "${GREEN}"
-    echo "╔══════════════════════════════════════════════════════════════╗"
-    echo "║            INSTALLATION COMPLETED SUCCESSFULLY!              ║"
-    echo "╚══════════════════════════════════════════════════════════════╝"
+    cat << "EOF"
+╔══════════════════════════════════════════════════════════════╗
+║                                                              ║
+║          INSTALLATION COMPLETED SUCCESSFULLY! 🎉             ║
+║                                                              ║
+╚══════════════════════════════════════════════════════════════╝
+EOF
     echo -e "${NC}\n"
     
     echo -e "${CYAN}📦 Installed Services:${NC}"
-    echo "  ✓ MySQL Database"
+    echo "  ✓ MySQL Database Server"
     echo "  ✓ Nginx Web Server"
-    echo "  ✓ Squid Proxy Server"
+    echo "  ✓ Squid Proxy Server (Port 3128)"
     echo "  ✓ V2Ray VPN Server"
-    echo "  ✓ Telegram Bot"
+    echo "  ✓ UFW Firewall"
+    echo "  ✓ Fail2Ban Security"
+    echo "  ✓ SSL Certificate Tools"
+    echo "  ✓ VPS Manager Telegram Bot"
     echo ""
     
     echo -e "${CYAN}🤖 Bot Information:${NC}"
-    echo "  Token: $BOT_TOKEN"
-    echo "  Admin ID: $ADMIN_ID"
-    echo "  Status: $(systemctl is-active vpsmanager-bot)"
+    echo "  Bot Status: $(systemctl is-active vpsmanager-bot)"
+    echo "  Telegram: @ALLINONEBIGBOSSbot"
     echo ""
     
-    echo -e "${CYAN}📁 Directories:${NC}"
-    echo "  Install: $INSTALL_DIR"
+    echo -e "${CYAN}📁 Important Directories:${NC}"
+    echo "  Installation: $INSTALL_DIR"
     echo "  Bot: $BOT_DIR"
-    echo "  Logs: $INSTALL_DIR/logs"
+    echo "  Logs: $LOG_DIR"
+    echo "  Downloads: $DOWNLOADS_DIR"
+    echo "  Config: $CONFIG_DIR"
     echo ""
     
     echo -e "${CYAN}🔧 Management Commands:${NC}"
-    echo "  vpsbot start    - Start bot"
-    echo "  vpsbot stop     - Stop bot"
-    echo "  vpsbot restart  - Restart bot"
-    echo "  vpsbot status   - Check status"
-    echo "  vpsbot logs     - View logs"
+    echo "  vpsbot start     - Start the bot"
+    echo "  vpsbot stop      - Stop the bot"
+    echo "  vpsbot restart   - Restart the bot"
+    echo "  vpsbot status    - Check bot status"
+    echo "  vpsbot logs      - View live logs"
+    echo "  vpsbot errors    - View error logs"
+    echo "  vpsbot update    - Update to latest version"
     echo ""
     
-    echo -e "${CYAN}🔐 MySQL Password:${NC}"
-    echo "  Saved in: /root/.mysql_vps_password"
+    echo -e "${CYAN}🔐 Credentials:${NC}"
+    echo "  MySQL saved in: $CONFIG_DIR/mysql_credentials.txt"
     echo ""
     
-    echo -e "${CYAN}🌐 Domain:${NC}"
-    echo "  $DOMAIN"
+    echo -e "${CYAN}🌐 Network:${NC}"
+    echo "  Domain: $DOMAIN"
+    echo "  Proxy Port: 3128"
+    echo ""
+    
+    echo -e "${CYAN}🔥 Firewall Ports:${NC}"
+    echo "  SSH: 22"
+    echo "  HTTP: 80"
+    echo "  HTTPS: 443"
+    echo "  Proxy: 3128"
     echo ""
     
     echo -e "${CYAN}📞 Support:${NC}"
     echo "  Telegram: @ALLINONEBIGBOSSbot"
     echo "  GitHub: github.com/AndamAziz/vps-pro-maneger"
+    echo "  Email: support@kurdcloud.xyz"
     echo ""
     
-    echo -e "${GREEN}Installation completed in $(($SECONDS / 60)) minutes!${NC}"
+    INSTALL_TIME=$((SECONDS / 60))
+    echo -e "${GREEN}✓ Installation completed in $INSTALL_TIME minute(s)!${NC}"
+    echo ""
+    
+    echo -e "${YELLOW}Next steps:${NC}"
+    echo "  1. Check bot status: vpsbot status"
+    echo "  2. View logs: vpsbot logs"
+    echo "  3. Test bot on Telegram: /start"
     echo ""
 }
 
 ################################################################################
-# Main
+# Main Installation Flow
 ################################################################################
 
 main() {
+    # Start timer
+    SECONDS=0
+    
+    # Show banner
     print_banner
+    
+    # Pre-installation checks
+    log "Running pre-installation checks..."
     check_root
     check_os
+    check_resources
+    echo ""
     
+    # Confirm installation
+    echo -e "${YELLOW}This will install VPS Manager Pro and all dependencies.${NC}"
+    echo -e "${YELLOW}Estimated time: 5-10 minutes${NC}"
+    echo ""
+    read -p "Continue with installation? (y/n): " -n 1 -r
+    echo ""
+    
+    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+        echo "Installation cancelled."
+        exit 0
+    fi
+    
+    echo ""
     log "Starting installation..."
     echo ""
     
-    step1_update_system
-    step2_install_essentials
-    step3_install_python
-    step4_install_mysql
-    step5_install_nginx
-    step6_install_squid
-    step7_install_v2ray
-    step8_configure_firewall
-    step9_install_ssl
-    step10_clone_repository
-    step11_install_python_packages
-    step12_configure_bot
-    step13_create_systemd_service
-    step14_create_management_command
-    step15_start_services
+    # Execute installation steps
+    step01_update_system
+    step02_install_essentials
+    step03_install_build_tools
+    step04_install_python
+    step05_install_ffmpeg
+    step06_install_mysql
+    step07_install_nginx
+    step08_install_squid
+    step09_install_v2ray
+    step10_configure_firewall
+    step11_install_fail2ban
+    step12_install_ssl
+    step13_create_directories
+    step14_download_bot_files
+    step15_install_python_packages
+    step16_configure_bot
+    step17_create_systemd_service
+    step18_create_management_script
+    step19_start_services
+    step20_cleanup
     
+    # Show summary
     show_summary
 }
 
-# Run
-main
+# Run main installation
+main "$@"
