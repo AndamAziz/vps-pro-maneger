@@ -1,0 +1,16 @@
+# Telegram Bot
+python-telegram-bot==20.7
+
+# Media Downloaders
+instaloader==4.10.3
+instagrapi==2.0.0
+yt-dlp==2023.12.30
+
+# Database
+mysql-connector-python==8.2.0
+
+# Utilities
+qrcode==7.4.2
+Pillow==10.1.0
+psutil==5.9.6
+requests==2.31.0
