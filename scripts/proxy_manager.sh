@@ -18,7 +18,7 @@ SQUID_PASSWD="/etc/squid/passwd"
 
 # Database initialization
 init_proxy_database() {
-    mysql --defaults-extra-file=~/github-upload/scripts/.my.cnf << EOF
+    sudo mysql << EOF
 USE $DB_NAME;
 
 CREATE TABLE IF NOT EXISTS proxy_users (
@@ -134,7 +134,7 @@ add_proxy_user() {
     local expiry_date=$(date -d "+$days days" +%Y-%m-%d)
     
     # Add to database
-    mysql --defaults-extra-file=~/github-upload/scripts/.my.cnf -D $DB_NAME << EOF
+    sudo mysql -D $DB_NAME << EOF
 INSERT INTO proxy_users (username, password, expiry_date, traffic_limit_gb)
 VALUES ('$username', '$password', '$expiry_date', $traffic_gb);
 EOF
@@ -174,7 +174,7 @@ delete_proxy_user() {
     htpasswd -D $SQUID_PASSWD "$username" 2>/dev/null || true
     
     # Update database
-    mysql --defaults-extra-file=~/github-upload/scripts/.my.cnf -D $DB_NAME << EOF
+    sudo mysql -D $DB_NAME << EOF
 UPDATE proxy_users SET status='disabled' WHERE username='$username';
 EOF
     
@@ -185,7 +185,7 @@ EOF
 list_proxy_users() {
     echo -e "${CYAN}Proxy Users:${NC}"
     echo ""
-    mysql --defaults-extra-file=~/github-upload/scripts/.my.cnf -D $DB_NAME -t << EOF
+    sudo mysql -D $DB_NAME -t << EOF
 SELECT 
     username,
     DATE_FORMAT(created_date, '%Y-%m-%d') as created,
@@ -203,7 +203,7 @@ check_expired_users() {
     echo -e "${CYAN}Checking for expired proxy users...${NC}"
     
     # Get expired users
-    local expired=$(mysql --defaults-extra-file=~/github-upload/scripts/.my.cnf -D $DB_NAME -sN << EOF
+    local expired=$(sudo mysql -D $DB_NAME -sN << EOF
 SELECT username FROM proxy_users 
 WHERE expiry_date < CURDATE() AND status='active';
 EOF
@@ -217,7 +217,7 @@ EOF
     # Disable expired users
     while IFS= read -r username; do
         htpasswd -D $SQUID_PASSWD "$username" 2>/dev/null || true
-        mysql --defaults-extra-file=~/github-upload/scripts/.my.cnf -D $DB_NAME << EOF
+        sudo mysql -D $DB_NAME << EOF
 UPDATE proxy_users SET status='expired' WHERE username='$username';
 EOF
         echo -e "${YELLOW}✓${NC} Disabled expired user: $username"
@@ -240,7 +240,7 @@ show_user_info() {
     echo ""
     
     # From database
-    mysql --defaults-extra-file=~/github-upload/scripts/.my.cnf -D $DB_NAME -t << EOF
+    sudo mysql -D $DB_NAME -t << EOF
 SELECT * FROM proxy_users WHERE username='$username';
 EOF
     

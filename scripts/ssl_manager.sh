@@ -18,7 +18,7 @@ EMAIL="admin@kurdcloud.xyz"
 
 # Database initialization
 init_ssl_database() {
-    mysql --defaults-extra-file=~/github-upload/scripts/.my.cnf << EOF
+    sudo mysql << EOF
 USE $DB_NAME;
 
 CREATE TABLE IF NOT EXISTS ssl_certificates (
@@ -78,7 +78,7 @@ obtain_certificate() {
         local expiry_date=$(date -d "$expiry" +"%Y-%m-%d %H:%M:%S")
         
         # Add to database
-        mysql --defaults-extra-file=~/github-upload/scripts/.my.cnf -D $DB_NAME << EOF
+        sudo mysql -D $DB_NAME << EOF
 INSERT INTO ssl_certificates (domain, expiry_date)
 VALUES ('$domain', '$expiry_date')
 ON DUPLICATE KEY UPDATE expiry_date='$expiry_date', status='active';
@@ -112,7 +112,7 @@ renew_certificate() {
     
     if [[ $? -eq 0 ]]; then
         # Update database
-        mysql --defaults-extra-file=~/github-upload/scripts/.my.cnf -D $DB_NAME << EOF
+        sudo mysql -D $DB_NAME << EOF
 UPDATE ssl_certificates 
 SET last_check=NOW(), status='active' 
 WHERE domain='$domain' OR '$domain' = '';
@@ -147,7 +147,7 @@ check_certificates() {
     echo ""
     
     # List from database
-    mysql --defaults-extra-file=~/github-upload/scripts/.my.cnf -D $DB_NAME -t << EOF
+    sudo mysql -D $DB_NAME -t << EOF
 SELECT 
     domain,
     DATE_FORMAT(issued_date, '%Y-%m-%d') as issued,
@@ -160,7 +160,7 @@ ORDER BY expiry_date;
 EOF
     
     # Check expiring soon (< 30 days)
-    local expiring=$(mysql --defaults-extra-file=~/github-upload/scripts/.my.cnf -D $DB_NAME -sN << EOF
+    local expiring=$(sudo mysql -D $DB_NAME -sN << EOF
 SELECT COUNT(*) FROM ssl_certificates 
 WHERE DATEDIFF(expiry_date, NOW()) < 30 AND status='active';
 EOF
@@ -186,7 +186,7 @@ revoke_certificate() {
     certbot revoke --cert-name "$domain" --delete-after-revoke
     
     # Update database
-    mysql --defaults-extra-file=~/github-upload/scripts/.my.cnf -D $DB_NAME << EOF
+    sudo mysql -D $DB_NAME << EOF
 UPDATE ssl_certificates SET status='expired' WHERE domain='$domain';
 EOF
     

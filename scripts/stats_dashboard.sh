@@ -77,14 +77,14 @@ get_service_status() {
 
 # Get user statistics
 get_user_stats() {
-    local ssh_total=$(mysql --defaults-extra-file=~/github-upload/scripts/.my.cnf -D "$DB_NAME" -sN -e "SELECT COUNT(*) FROM ssh_users;" 2>/dev/null || echo "0")
-    local ssh_active=$(mysql --defaults-extra-file=~/github-upload/scripts/.my.cnf -D "$DB_NAME" -sN -e "SELECT COUNT(*) FROM ssh_users WHERE status='active';" 2>/dev/null || echo "0")
+    local ssh_total=$(sudo mysql -D "$DB_NAME" -sN -e "SELECT COUNT(*) FROM ssh_users;" 2>/dev/null || echo "0")
+    local ssh_active=$(sudo mysql -D "$DB_NAME" -sN -e "SELECT COUNT(*) FROM ssh_users WHERE status='active';" 2>/dev/null || echo "0")
     
-    local proxy_total=$(mysql --defaults-extra-file=~/github-upload/scripts/.my.cnf -D "$DB_NAME" -sN -e "SELECT COUNT(*) FROM proxy_users;" 2>/dev/null || echo "0")
-    local proxy_active=$(mysql --defaults-extra-file=~/github-upload/scripts/.my.cnf -D "$DB_NAME" -sN -e "SELECT COUNT(*) FROM proxy_users WHERE status='active';" 2>/dev/null || echo "0")
+    local proxy_total=$(sudo mysql -D "$DB_NAME" -sN -e "SELECT COUNT(*) FROM proxy_users;" 2>/dev/null || echo "0")
+    local proxy_active=$(sudo mysql -D "$DB_NAME" -sN -e "SELECT COUNT(*) FROM proxy_users WHERE status='active';" 2>/dev/null || echo "0")
     
-    local v2ray_total=$(mysql --defaults-extra-file=~/github-upload/scripts/.my.cnf -D "$DB_NAME" -sN -e "SELECT COUNT(*) FROM v2ray_users;" 2>/dev/null || echo "0")
-    local v2ray_active=$(mysql --defaults-extra-file=~/github-upload/scripts/.my.cnf -D "$DB_NAME" -sN -e "SELECT COUNT(*) FROM v2ray_users WHERE status='active';" 2>/dev/null || echo "0")
+    local v2ray_total=$(sudo mysql -D "$DB_NAME" -sN -e "SELECT COUNT(*) FROM v2ray_users;" 2>/dev/null || echo "0")
+    local v2ray_active=$(sudo mysql -D "$DB_NAME" -sN -e "SELECT COUNT(*) FROM v2ray_users WHERE status='active';" 2>/dev/null || echo "0")
     
     echo "$ssh_total $ssh_active $proxy_total $proxy_active $v2ray_total $v2ray_active"
 }
@@ -123,7 +123,7 @@ save_stats_to_db() {
     local net_out=$5
     local connections=$6
     
-    mysql --defaults-extra-file=~/github-upload/scripts/.my.cnf -D "$DB_NAME" << EOF 2>/dev/null || true
+    sudo mysql -D "$DB_NAME" << EOF 2>/dev/null || true
 INSERT INTO system_stats (cpu_usage, memory_usage, disk_usage, network_in_mb, network_out_mb, active_connections)
 VALUES ($cpu, $memory, $disk, $net_in, $net_out, $connections);
 EOF
@@ -214,7 +214,7 @@ show_historical_stats() {
     echo -e "${CYAN}Historical Statistics (Last 24 Hours)${NC}"
     echo ""
     
-    mysql --defaults-extra-file=~/github-upload/scripts/.my.cnf -D "$DB_NAME" -t << 'EOF'
+    sudo mysql -D "$DB_NAME" -t << 'EOF'
 SELECT 
     DATE_FORMAT(timestamp, '%Y-%m-%d %H:%i') as time,
     ROUND(cpu_usage, 1) as cpu,
@@ -233,7 +233,7 @@ show_peak_usage() {
     echo -e "${CYAN}Peak Usage Statistics${NC}"
     echo ""
     
-    mysql --defaults-extra-file=~/github-upload/scripts/.my.cnf -D "$DB_NAME" << 'EOF'
+    sudo mysql -D "$DB_NAME" << 'EOF'
 SELECT 
     'CPU Peak' as metric,
     CONCAT(ROUND(MAX(cpu_usage), 2), '%') as peak_value,
@@ -264,7 +264,7 @@ export_stats() {
     
     echo -e "${CYAN}Exporting last $days days of statistics...${NC}"
     
-    mysql --defaults-extra-file=~/github-upload/scripts/.my.cnf -D "$DB_NAME" << EOF > "$export_file"
+    sudo mysql -D "$DB_NAME" << EOF > "$export_file"
 SELECT 
     timestamp,
     cpu_usage,

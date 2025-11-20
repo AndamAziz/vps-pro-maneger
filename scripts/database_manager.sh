@@ -22,7 +22,7 @@ MAX_BACKUPS=7
 init_complete_database() {
     echo -e "${CYAN}Initializing complete database...${NC}"
     
-    mysql --defaults-extra-file=~/github-upload/scripts/.my.cnf << 'EOF'
+    sudo mysql << 'EOF'
 CREATE DATABASE IF NOT EXISTS vps_manager;
 USE vps_manager;
 
@@ -212,7 +212,7 @@ restore_backup() {
     echo -e "${CYAN}Restoring from backup...${NC}"
     
     # Decompress and restore
-    gunzip -c "$selected_backup" | mysql --defaults-extra-file=~/github-upload/scripts/.my.cnf "$DB_NAME"
+    gunzip -c "$selected_backup" | sudo mysql "$DB_NAME"
     
     echo -e "${GREEN}✓${NC} Database restored successfully"
 }
@@ -222,7 +222,7 @@ show_statistics() {
     echo -e "${CYAN}Database Statistics:${NC}"
     echo ""
     
-    mysql --defaults-extra-file=~/github-upload/scripts/.my.cnf -D "$DB_NAME" << 'EOF'
+    sudo mysql -D "$DB_NAME" << 'EOF'
 SELECT 
     'SSH Users' as category,
     COUNT(*) as total,
@@ -254,7 +254,7 @@ EOF
 
     echo ""
     echo -e "${CYAN}Database Size:${NC}"
-    mysql --defaults-extra-file=~/github-upload/scripts/.my.cnf -e "SELECT 
+    sudo mysql -e "SELECT 
         table_schema AS 'Database',
         ROUND(SUM(data_length + index_length) / 1024 / 1024, 2) AS 'Size (MB)'
     FROM information_schema.tables 
@@ -266,11 +266,11 @@ EOF
 optimize_database() {
     echo -e "${CYAN}Optimizing database...${NC}"
     
-    local tables=$(mysql --defaults-extra-file=~/github-upload/scripts/.my.cnf -D "$DB_NAME" -sN -e "SHOW TABLES;")
+    local tables=$(sudo mysql -D "$DB_NAME" -sN -e "SHOW TABLES;")
     
     while IFS= read -r table; do
         echo -n "  Optimizing $table... "
-        mysql --defaults-extra-file=~/github-upload/scripts/.my.cnf -D "$DB_NAME" -e "OPTIMIZE TABLE $table;" > /dev/null 2>&1
+        sudo mysql -D "$DB_NAME" -e "OPTIMIZE TABLE $table;" > /dev/null 2>&1
         echo -e "${GREEN}✓${NC}"
     done <<< "$tables"
     
@@ -288,7 +288,7 @@ export_data() {
     
     local export_file="/tmp/${table}_$(date +%Y%m%d_%H%M%S).csv"
     
-    mysql --defaults-extra-file=~/github-upload/scripts/.my.cnf -D "$DB_NAME" -e "
+    sudo mysql -D "$DB_NAME" -e "
         SELECT * FROM $table
         INTO OUTFILE '$export_file'
         FIELDS TERMINATED BY ','
@@ -296,7 +296,7 @@ export_data() {
         LINES TERMINATED BY '\n';
     " 2>/dev/null || {
         # Fallback method
-        mysql --defaults-extra-file=~/github-upload/scripts/.my.cnf -D "$DB_NAME" -e "SELECT * FROM $table;" > "$export_file"
+        sudo mysql -D "$DB_NAME" -e "SELECT * FROM $table;" > "$export_file"
     }
     
     echo -e "${GREEN}✓${NC} Data exported to: $export_file"
@@ -309,7 +309,7 @@ clean_old_data() {
     echo -e "${CYAN}Cleaning data older than $days days...${NC}"
     
     # Clean expired users
-    mysql --defaults-extra-file=~/github-upload/scripts/.my.cnf -D "$DB_NAME" << EOF
+    sudo mysql -D "$DB_NAME" << EOF
 DELETE FROM ssh_users WHERE status='expired' AND expiry_date < DATE_SUB(NOW(), INTERVAL $days DAY);
 DELETE FROM proxy_users WHERE status='expired' AND expiry_date < DATE_SUB(NOW(), INTERVAL $days DAY);
 DELETE FROM v2ray_users WHERE status='expired' AND expiry_date < DATE_SUB(NOW(), INTERVAL $days DAY);
@@ -350,7 +350,7 @@ interactive_query() {
             continue
         fi
         
-        mysql --defaults-extra-file=~/github-upload/scripts/.my.cnf -D "$DB_NAME" -t -e "$query" 2>&1
+        sudo mysql -D "$DB_NAME" -t -e "$query" 2>&1
         echo ""
     done
 }

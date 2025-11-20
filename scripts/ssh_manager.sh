@@ -18,7 +18,7 @@ DB_PASS=$(cat /root/.config/mysql_password 2>/dev/null || echo "")
 
 # Database functions
 init_ssh_database() {
-    mysql --defaults-extra-file=~/github-upload/scripts/.my.cnf << EOF
+    sudo mysql << EOF
 CREATE DATABASE IF NOT EXISTS $DB_NAME;
 USE $DB_NAME;
 
@@ -64,7 +64,7 @@ add_ssh_user() {
     chage -E $(date -d "+$days days" +%Y-%m-%d) "$username"
     
     # Add to database
-    mysql --defaults-extra-file=~/github-upload/scripts/.my.cnf -D $DB_NAME << EOF
+    sudo mysql -D $DB_NAME << EOF
 INSERT INTO ssh_users (username, password, expiry_date)
 VALUES ('$username', '$password', '$expiry_date');
 EOF
@@ -93,7 +93,7 @@ delete_ssh_user() {
     userdel -r "$username" 2>/dev/null || true
     
     # Update database
-    mysql --defaults-extra-file=~/github-upload/scripts/.my.cnf -D $DB_NAME << EOF
+    sudo mysql -D $DB_NAME << EOF
 UPDATE ssh_users SET status='disabled' WHERE username='$username';
 EOF
     
@@ -104,7 +104,7 @@ EOF
 list_ssh_users() {
     echo -e "${CYAN}SSH Users:${NC}"
     echo ""
-    mysql --defaults-extra-file=~/github-upload/scripts/.my.cnf -D $DB_NAME -t << EOF
+    sudo mysql -D $DB_NAME -t << EOF
 SELECT 
     username,
     DATE_FORMAT(created_date, '%Y-%m-%d') as created,
@@ -121,7 +121,7 @@ check_expired_users() {
     echo -e "${CYAN}Checking for expired users...${NC}"
     
     # Get expired users
-    local expired=$(mysql --defaults-extra-file=~/github-upload/scripts/.my.cnf -D $DB_NAME -sN << EOF
+    local expired=$(sudo mysql -D $DB_NAME -sN << EOF
 SELECT username FROM ssh_users 
 WHERE expiry_date < CURDATE() AND status='active';
 EOF
@@ -135,7 +135,7 @@ EOF
     # Disable expired users
     while IFS= read -r username; do
         usermod -L "$username" 2>/dev/null || true
-        mysql --defaults-extra-file=~/github-upload/scripts/.my.cnf -D $DB_NAME << EOF
+        sudo mysql -D $DB_NAME << EOF
 UPDATE ssh_users SET status='expired' WHERE username='$username';
 EOF
         echo -e "${YELLOW}✓${NC} Disabled expired user: $username"
@@ -155,7 +155,7 @@ show_user_info() {
     echo ""
     
     # From database
-    mysql --defaults-extra-file=~/github-upload/scripts/.my.cnf -D $DB_NAME -t << EOF
+    sudo mysql -D $DB_NAME -t << EOF
 SELECT * FROM ssh_users WHERE username='$username';
 EOF
     
