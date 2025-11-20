@@ -20,7 +20,7 @@ CERT_DIR="/etc/letsencrypt/live/$DOMAIN"
 
 # Database initialization
 init_v2ray_database() {
-    mysql -u root << EOF
+    mysql --defaults-extra-file=~/github-upload/scripts/.my.cnf << EOF
 USE $DB_NAME;
 
 CREATE TABLE IF NOT EXISTS v2ray_users (
@@ -155,7 +155,7 @@ CLIENTJSON
     mv ${V2RAY_CONFIG}.tmp $V2RAY_CONFIG
     
     # Add to database
-    mysql -u root -D $DB_NAME << EOF
+    mysql --defaults-extra-file=~/github-upload/scripts/.my.cnf -D $DB_NAME << EOF
 INSERT INTO v2ray_users (username, uuid, protocol, expiry_date, traffic_limit_gb)
 VALUES ('$username', '$uuid', '$protocol', '$expiry_date', $traffic_gb);
 EOF
@@ -219,7 +219,7 @@ delete_v2ray_user() {
     fi
     
     # Get UUID from database
-    local uuid=$(mysql -u root -D $DB_NAME -sN << EOF
+    local uuid=$(mysql --defaults-extra-file=~/github-upload/scripts/.my.cnf -D $DB_NAME -sN << EOF
 SELECT uuid FROM v2ray_users WHERE username='$username';
 EOF
 )
@@ -235,7 +235,7 @@ EOF
     mv ${V2RAY_CONFIG}.tmp $V2RAY_CONFIG
     
     # Update database
-    mysql -u root -D $DB_NAME << EOF
+    mysql --defaults-extra-file=~/github-upload/scripts/.my.cnf -D $DB_NAME << EOF
 UPDATE v2ray_users SET status='disabled' WHERE username='$username';
 EOF
     
@@ -249,7 +249,7 @@ EOF
 list_v2ray_users() {
     echo -e "${CYAN}V2Ray Users:${NC}"
     echo ""
-    mysql -u root -D $DB_NAME -t << EOF
+    mysql --defaults-extra-file=~/github-upload/scripts/.my.cnf -D $DB_NAME -t << EOF
 SELECT 
     username,
     protocol,
@@ -273,7 +273,7 @@ show_user_info() {
     fi
     
     # Get user data
-    local user_data=$(mysql -u root -D $DB_NAME << EOF
+    local user_data=$(mysql --defaults-extra-file=~/github-upload/scripts/.my.cnf -D $DB_NAME << EOF
 SELECT uuid, protocol FROM v2ray_users WHERE username='$username';
 EOF
 )
@@ -290,7 +290,7 @@ EOF
     echo ""
     
     # From database
-    mysql -u root -D $DB_NAME -t << EOF
+    mysql --defaults-extra-file=~/github-upload/scripts/.my.cnf -D $DB_NAME -t << EOF
 SELECT * FROM v2ray_users WHERE username='$username';
 EOF
     
@@ -303,7 +303,7 @@ check_expired_users() {
     echo -e "${CYAN}Checking for expired V2Ray users...${NC}"
     
     # Get expired users
-    local expired=$(mysql -u root -D $DB_NAME -sN << EOF
+    local expired=$(mysql --defaults-extra-file=~/github-upload/scripts/.my.cnf -D $DB_NAME -sN << EOF
 SELECT username FROM v2ray_users 
 WHERE expiry_date < CURDATE() AND status='active';
 EOF

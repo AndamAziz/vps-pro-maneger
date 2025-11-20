@@ -15,7 +15,8 @@ MAGENTA='\033[0;35m'
 WHITE='\033[1;37m'
 NC='\033[0m'
 
-SCRIPT_DIR="/opt/vps-manager/scripts"
+# Detect script location
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 show_banner() {
     clear
@@ -68,47 +69,88 @@ main() {
         
         case $choice in
             1)
-                bash "$SCRIPT_DIR/ssh_manager.sh"
+                if [ -f "$SCRIPT_DIR/ssh_manager.sh" ]; then
+                    bash "$SCRIPT_DIR/ssh_manager.sh"
+                else
+                    echo -e "${RED}Error: ssh_manager.sh not found${NC}"
+                    echo "Expected location: $SCRIPT_DIR/ssh_manager.sh"
+                    read -p "Press enter to continue..."
+                fi
                 ;;
             2)
-                bash "$SCRIPT_DIR/proxy_manager.sh"
+                if [ -f "$SCRIPT_DIR/proxy_manager.sh" ]; then
+                    bash "$SCRIPT_DIR/proxy_manager.sh"
+                else
+                    echo -e "${RED}Error: proxy_manager.sh not found${NC}"
+                    read -p "Press enter to continue..."
+                fi
                 ;;
             3)
-                bash "$SCRIPT_DIR/v2ray_manager.sh"
+                if [ -f "$SCRIPT_DIR/v2ray_manager.sh" ]; then
+                    bash "$SCRIPT_DIR/v2ray_manager.sh"
+                else
+                    echo -e "${RED}Error: v2ray_manager.sh not found${NC}"
+                    read -p "Press enter to continue..."
+                fi
                 ;;
             4)
-                bash "$SCRIPT_DIR/ssl_manager.sh"
+                if [ -f "$SCRIPT_DIR/ssl_manager.sh" ]; then
+                    bash "$SCRIPT_DIR/ssl_manager.sh"
+                else
+                    echo -e "${RED}Error: ssl_manager.sh not found${NC}"
+                    read -p "Press enter to continue..."
+                fi
                 ;;
             5)
-                bash "$SCRIPT_DIR/database_manager.sh"
+                if [ -f "$SCRIPT_DIR/database_manager.sh" ]; then
+                    bash "$SCRIPT_DIR/database_manager.sh"
+                else
+                    echo -e "${RED}Error: database_manager.sh not found${NC}"
+                    read -p "Press enter to continue..."
+                fi
                 ;;
             6)
-                bash "$SCRIPT_DIR/stats_dashboard.sh"
+                if [ -f "$SCRIPT_DIR/stats_dashboard.sh" ]; then
+                    bash "$SCRIPT_DIR/stats_dashboard.sh"
+                else
+                    echo -e "${RED}Error: stats_dashboard.sh not found${NC}"
+                    read -p "Press enter to continue..."
+                fi
                 ;;
             7)
-                bash "$SCRIPT_DIR/stats_dashboard.sh" <<< "5"
+                echo -e "${CYAN}Quick Status:${NC}"
+                echo ""
+                echo -e "${CYAN}System:${NC}"
+                echo "  CPU: $(top -bn1 | grep "Cpu(s)" | awk '{print $2}')%"
+                echo "  Memory: $(free | awk '/Mem:/ {printf "%.1f%%", $3/$2 * 100}')"
+                echo "  Disk: $(df -h / | awk 'NR==2 {print $5}')"
+                echo ""
+                echo -e "${CYAN}Services:${NC}"
+                systemctl is-active --quiet mysql && echo "  MySQL: ✓ Running" || echo "  MySQL: ✗ Stopped"
+                systemctl is-active --quiet nginx && echo "  Nginx: ✓ Running" || echo "  Nginx: ✗ Stopped"
+                systemctl is-active --quiet squid && echo "  Squid: ✓ Running" || echo "  Squid: ✗ Stopped"
+                echo ""
                 read -p "Press enter to continue..."
                 ;;
             8)
                 echo -e "${CYAN}Restarting all services...${NC}"
-                systemctl restart vpsmanager-bot
-                systemctl restart mysql
-                systemctl restart nginx
-                systemctl restart squid
-                systemctl restart v2ray
-                echo -e "${GREEN}✓${NC} All services restarted"
+                systemctl restart mysql 2>/dev/null && echo "✓ MySQL restarted" || echo "✗ MySQL failed"
+                systemctl restart nginx 2>/dev/null && echo "✓ Nginx restarted" || echo "✗ Nginx failed"
+                systemctl restart squid 2>/dev/null && echo "✓ Squid restarted" || echo "✗ Squid failed"
+                echo ""
                 read -p "Press enter to continue..."
                 ;;
             9)
                 echo "Select log:"
-                echo "1. Bot logs"
-                echo "2. Nginx logs"
-                echo "3. System logs"
+                echo "1. System log"
+                echo "2. Nginx access"
+                echo "3. Nginx error"
                 read -p "Choice: " log_choice
                 case $log_choice in
-                    1) tail -f /opt/vps-manager/logs/bot.log ;;
-                    2) tail -f /var/log/nginx/access.log ;;
-                    3) tail -f /var/log/syslog ;;
+                    1) tail -f /var/log/syslog 2>/dev/null || tail -f /var/log/messages ;;
+                    2) tail -f /var/log/nginx/access.log 2>/dev/null || echo "Log not found" ;;
+                    3) tail -f /var/log/nginx/error.log 2>/dev/null || echo "Log not found" ;;
+                    *) echo "Invalid choice" ;;
                 esac
                 ;;
             0)
