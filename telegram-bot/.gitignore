@@ -1,0 +1,28 @@
+# Bot logs
+*.log
+output.log
+bot.log
+
+# Statistics
+bot_stats.json
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Virtual environment
+venv/
+env/
+ENV/
+
+# Temporary files
+/tmp/
+*.mp4
+*.mp3
+temp_*
+
+# Config with tokens (add after setting up)
+# config.py

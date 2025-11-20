@@ -1,112 +1,100 @@
 # 🤖 ALL IN ONE BIG BOSS Bot
 
-Telegram bot بۆ داونلۆد کردنی ڤیدیۆ و MP3 لە:
-- 📸 Instagram
-- 📘 Facebook  
-- 🎵 TikTok
+Telegram bot for downloading videos and converting to MP3 from:
+- 📸 Instagram (Posts/Reels)
+- 📘 Facebook (Videos)
+- 🎵 TikTok (Videos)
 
-## ✨ Features
+## Features
 
-- ✅ داونلۆد کردنی ڤیدیۆ لە هەر سێ platform
-- ✅ گۆڕینی خۆکار بۆ MP3
-- ✅ هەردوو فۆرماتەکە دەنێردرێت
-- ✅ ئامارگری
-- ✅ کوردی و ئینگلیزی
+✅ Download video from social media  
+✅ Auto convert to MP3  
+✅ Send both formats (Video + Audio)  
+✅ Kurdish interface  
+✅ Statistics tracking  
+✅ Admin commands  
 
-## 📦 Installation
+## Installation
 ```bash
-# 1. Install dependencies
-./install.sh
+# Install dependencies
+apt update
+apt install -y ffmpeg python3 python3-pip
 
-# 2. Configure
+# Install Python packages
+pip3 install -r requirements.txt
+
+# Configure
 nano config.py
 # Add your TELEGRAM_TOKEN and SOCIAL_API_KEY
+```
 
-# 3. Start bot
-./start.sh
+## Usage
 
-# 4. View logs
+### Start Bot
+```bash
+pkill -f instagram_bot.py
+nohup python3 instagram_bot.py > output.log 2>&1 &
+```
+
+### View Logs
+```bash
 tail -f output.log
 ```
 
-## 🔧 Configuration
-
-Edit `config.py`:
-```python
-# Get from @BotFather
-TELEGRAM_TOKEN = "your_bot_token"
-
-# Get from RapidAPI.com
-SOCIAL_API_KEY = "your_rapidapi_key"
-```
-
-## 📋 Commands
-
-- `/start` - دەستپێکردن
-- `/help` - یارمەتی
-- `/stats` - ئامارەکان (admin only)
-
-## 🚀 Usage
-
-1. لینکێک بنێرە لە Instagram/Facebook/TikTok
-2. چاوەڕێ بکە
-3. هەردوو Video + MP3 وەردەگریت!
-
-## 🛠️ Management
+### Stop Bot
 ```bash
-# Start bot
-./start.sh
-
-# Stop bot
-./stop.sh
-
-# View logs
-tail -f output.log
-
-# Check status
-ps aux | grep instagram_bot
+pkill -f instagram_bot.py
 ```
 
-## 📊 Statistics
+## Configuration
 
-Admin دەتوانێت `/stats` بەکاربهێنێت بۆ بینینی:
-- کۆی داونلۆدەکان
-- ئامار بۆ هەر platform
-- ڕێژەی سەرکەوتوویی
+Edit `config.py` with your credentials:
 
-## 🔐 Security
+1. **TELEGRAM_TOKEN**: Get from [@BotFather](https://t.me/BotFather)
+2. **SOCIAL_API_KEY**: Get from [RapidAPI](https://rapidapi.com)
 
-- تەنها admin دەتوانێت ئامار ببینێت
-- Token-ەکان لە config.py هەڵدەگیرێن
-- Log-ەکان لە output.log دەنووسرێن
+## Commands
 
-## 📝 Notes
+- `/start` - Start the bot
+- `/stats` - View statistics (admin only)
 
-- پێویستە FFmpeg بۆ گۆڕینی MP3
-- پێویستە RapidAPI key
-- Bot لە background کاردەکات
+## How It Works
 
-## 🆘 Troubleshooting
+1. User sends Instagram/Facebook/TikTok link
+2. Bot downloads the video
+3. Bot converts video to MP3
+4. Both files are sent to user
 
-**Bot کارناکات:**
-```bash
-# Check logs
-tail -f output.log
+## Requirements
 
-# Restart
-./stop.sh
-./start.sh
-```
+- Python 3.8+
+- FFmpeg
+- python-telegram-bot
+- requests
 
-**FFmpeg error:**
-```bash
-apt-get install ffmpeg
-```
+## Admin
 
-**API error:**
+Set `ADMIN_USER_ID` in `instagram_bot.py` to your Telegram user ID to access `/stats` command.
+
+## Notes
+
+- Videos are temporarily saved in `/tmp/`
+- Statistics saved in `bot_stats.json`
+- Logs saved in `bot.log` and `output.log`
+
+## Troubleshooting
+
+**Bot not starting?**
 - Check config.py tokens
-- Verify RapidAPI subscription
+- Verify FFmpeg installed: `ffmpeg -version`
+- Check logs: `tail -f output.log`
 
-## 📞 Support
+**MP3 conversion fails?**
+- Install FFmpeg: `apt install ffmpeg`
+- Check video format compatibility
 
-Created for VPS Manager Pro
+**API errors?**
+- Verify RapidAPI key is active
+- Check API subscription limits
+
+## Created for VPS Manager Pro
