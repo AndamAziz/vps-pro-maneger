@@ -110,6 +110,14 @@ main() {
                 fi
                 ;;
             6)
+            7)
+                if [ -f "$SCRIPT_DIR/openvpn_manager.sh" ]; then
+                    bash "$SCRIPT_DIR/openvpn_manager.sh"
+                else
+                    echo -e "${RED}Error: openvpn_manager.sh not found${NC}"
+                    read -p "Press enter to continue..."
+                fi
+                ;;
                 if [ -f "$SCRIPT_DIR/stats_dashboard.sh" ]; then
                     bash "$SCRIPT_DIR/stats_dashboard.sh"
                 else
