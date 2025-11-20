@@ -36,22 +36,41 @@ add_user_to_config() {
     local protocol=$2
     local email=$3
     
-    apt-get install -y -qq jq 2>/dev/null || true
+    command -v jq >/dev/null 2>&1 || apt-get install -y -qq jq
     
     case $protocol in
         vless)
-            jq ".inbounds[0].settings.clients += [{\"id\":\"$uuid\",\"email\":\"$email\"}]" $V2RAY_CONFIG > ${V2RAY_CONFIG}.tmp && mv ${V2RAY_CONFIG}.tmp $V2RAY_CONFIG
-            jq ".inbounds[3].settings.clients += [{\"id\":\"$uuid\",\"email\":\"$email\"}]" $V2RAY_CONFIG > ${V2RAY_CONFIG}.tmp && mv ${V2RAY_CONFIG}.tmp $V2RAY_CONFIG
+            # Add to Port 443
+            jq ".inbounds[0].settings.clients += [{\"id\": \"$uuid\", \"email\": \"$email\", \"level\": 0}]" \
+                $V2RAY_CONFIG > ${V2RAY_CONFIG}.tmp
+            mv ${V2RAY_CONFIG}.tmp $V2RAY_CONFIG
+            # Add to Port 80
+            jq ".inbounds[3].settings.clients += [{\"id\": \"$uuid\", \"email\": \"$email\", \"level\": 0}]" \
+                $V2RAY_CONFIG > ${V2RAY_CONFIG}.tmp
+            mv ${V2RAY_CONFIG}.tmp $V2RAY_CONFIG
             ;;
         vmess)
-            jq ".inbounds[1].settings.clients += [{\"id\":\"$uuid\",\"email\":\"$email\",\"alterId\":0}]" $V2RAY_CONFIG > ${V2RAY_CONFIG}.tmp && mv ${V2RAY_CONFIG}.tmp $V2RAY_CONFIG
-            jq ".inbounds[4].settings.clients += [{\"id\":\"$uuid\",\"email\":\"$email\",\"alterId\":0}]" $V2RAY_CONFIG > ${V2RAY_CONFIG}.tmp && mv ${V2RAY_CONFIG}.tmp $V2RAY_CONFIG
+            # Add to Port 443
+            jq ".inbounds[1].settings.clients += [{\"id\": \"$uuid\", \"email\": \"$email\", \"alterId\": 0}]" \
+                $V2RAY_CONFIG > ${V2RAY_CONFIG}.tmp
+            mv ${V2RAY_CONFIG}.tmp $V2RAY_CONFIG
+            # Add to Port 80
+            jq ".inbounds[4].settings.clients += [{\"id\": \"$uuid\", \"email\": \"$email\", \"alterId\": 0}]" \
+                $V2RAY_CONFIG > ${V2RAY_CONFIG}.tmp
+            mv ${V2RAY_CONFIG}.tmp $V2RAY_CONFIG
             ;;
         trojan)
-            jq ".inbounds[2].settings.clients += [{\"password\":\"$uuid\",\"email\":\"$email\"}]" $V2RAY_CONFIG > ${V2RAY_CONFIG}.tmp && mv ${V2RAY_CONFIG}.tmp $V2RAY_CONFIG
-            jq ".inbounds[5].settings.clients += [{\"password\":\"$uuid\",\"email\":\"$email\"}]" $V2RAY_CONFIG > ${V2RAY_CONFIG}.tmp && mv ${V2RAY_CONFIG}.tmp $V2RAY_CONFIG
+            # Add to Port 443
+            jq ".inbounds[2].settings.clients += [{\"password\": \"$uuid\", \"email\": \"$email\"}]" \
+                $V2RAY_CONFIG > ${V2RAY_CONFIG}.tmp
+            mv ${V2RAY_CONFIG}.tmp $V2RAY_CONFIG
+            # Add to Port 80
+            jq ".inbounds[5].settings.clients += [{\"password\": \"$uuid\", \"email\": \"$email\"}]" \
+                $V2RAY_CONFIG > ${V2RAY_CONFIG}.tmp
+            mv ${V2RAY_CONFIG}.tmp $V2RAY_CONFIG
             ;;
     esac
+}
 }
 
 generate_configs() {
@@ -102,7 +121,7 @@ generate_configs() {
             
         trojan)
             echo -e "${GREEN}▶ Config 1: Trojan + TLS (Port 443) - RECOMMENDED${NC}"
-            local link443="trojan://${uuid}@${DOMAIN}:443?security=tls&sni=${DOMAIN}&type=tcp#${username}_443_TLS"
+            local link443="trojan://${uuid}@${DOMAIN}:443?security=tls&sni=${DOMAIN}&type=ws&path=%2Fvless80#${username}_443_TLS"
             echo "$link443"
             echo ""
             qrencode -t ANSIUTF8 "$link443" 2>/dev/null || echo "[QR code]"
