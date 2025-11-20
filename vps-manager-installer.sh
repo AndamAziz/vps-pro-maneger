@@ -770,3 +770,34 @@ main() {
 
 # Run main installation
 main "$@"
+
+step21_setup_ssh_management() {
+    log "Step 21: Setting up SSH management..."
+    
+    # Download SSH manager script
+    wget -q -O "$INSTALL_DIR/scripts/ssh_manager.sh" \
+        "$GITHUB_RAW/scripts/ssh_manager.sh" || \
+        warn "Failed to download SSH manager"
+    
+    chmod +x "$INSTALL_DIR/scripts/ssh_manager.sh"
+    
+    # Initialize SSH database
+    mysql -u root << EOF
+USE vps_manager;
+CREATE TABLE IF NOT EXISTS ssh_users (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    username VARCHAR(50) UNIQUE NOT NULL,
+    password VARCHAR(255) NOT NULL,
+    created_date DATETIME DEFAULT CURRENT_TIMESTAMP,
+    expiry_date DATE NOT NULL,
+    status ENUM('active', 'expired', 'disabled') DEFAULT 'active',
+    connection_limit INT DEFAULT 2,
+    last_login DATETIME
+);
+EOF
+    
+    # Create cron job to check expired users
+    (crontab -l 2>/dev/null; echo "0 0 * * * $INSTALL_DIR/scripts/ssh_manager.sh check_expired_users") | crontab -
+    
+    success "SSH management configured"
+}
