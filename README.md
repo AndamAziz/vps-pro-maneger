@@ -52,7 +52,7 @@
 
 ### One-Command Install (Recommended)
 ```bash
-curl -sSL https://raw.githubusercontent.com/AndamAziz/vps-pro-maneger/main/auto-install.sh | sudo bash
+curl -sSL https://raw.githubusercontent.com/AndamAziz/vps-pro-maneger/main/vps-manager-installer.sh | sudo bash
 ```
 
 > ⏱️ **Installation time:** 5-10 minutes  
@@ -202,10 +202,10 @@ git clone https://github.com/AndamAziz/vps-pro-maneger.git
 cd vps-pro-maneger
 
 # 2. Make installer executable
-chmod +x auto-install.sh
+chmod +x vps-manager-installer.sh
 
 # 3. Run installer
-sudo ./auto-install.sh
+sudo ./vps-manager-installer.sh
 ```
 
 ### Configuration Files
@@ -405,7 +405,7 @@ MIT License - Free to use, modify, and distribute
 
 ### 🚀 Ready to get started?
 ```bash
-curl -sSL https://raw.githubusercontent.com/AndamAziz/vps-pro-maneger/main/auto-install.sh | sudo bash
+curl -sSL https://raw.githubusercontent.com/AndamAziz/vps-pro-maneger/main/vps-manager-installer.sh | sudo bash
 ```
 
 **Made with ❤️ by [KurdCloud Team](https://kurdcloud.xyz)**
