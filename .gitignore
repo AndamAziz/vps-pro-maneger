@@ -1,0 +1,36 @@
+# Python
+__pycache__/
+*.py[cod]
+venv/
+*.egg-info/
+
+# Logs
+*.log
+logs/
+
+# Database
+*.db
+*.sqlite
+
+# Session files
+.instagram_session.json
+
+# Environment
+.env
+
+# IDE
+.vscode/
+.idea/
+
+# Temporary
+*.tmp
+downloads/
+
+# Credentials
+config_local.py
+*.pem
+*.key
+
+# Backups
+*.bak
+backups/
