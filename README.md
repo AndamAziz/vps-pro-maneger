@@ -728,3 +728,4 @@ If you find this project useful, please consider giving it a star! ⭐
 [⬆ Back to Top](#-vps-manager-pro-v50)
 
 </div>
+# install.sh
