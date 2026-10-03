@@ -1,0 +1,27 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install tools
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck jq
+      - name: Syntax check
+        run: bash -n install.sh uninstall.sh vpsmanager lib/*.sh tests/*.sh
+      - name: ShellCheck
+        run: shellcheck -x -S warning install.sh uninstall.sh vpsmanager lib/*.sh
+      - name: Offline config tests
+        run: bash tests/test_config.sh
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Lint bot
+        run: |
+          pip install flake8
+          flake8 --max-line-length 130 bot/

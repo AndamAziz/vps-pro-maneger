@@ -1,0 +1,10 @@
+[Unit]
+Description=VPS Manager Pro - hourly user expiry
+
+[Timer]
+OnCalendar=hourly
+Persistent=true
+RandomizedDelaySec=120
+
+[Install]
+WantedBy=timers.target

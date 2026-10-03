@@ -1,0 +1,15 @@
+[Unit]
+Description=VPS Manager Pro Telegram bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/vps-manager/bot.env
+WorkingDirectory=@HOME@/bot
+ExecStart=@HOME@/venv/bin/python @HOME@/bot/telegram_bot.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

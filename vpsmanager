@@ -1,0 +1,185 @@
+#!/usr/bin/env bash
+#==============================================================================
+# KurdCloud VPS Manager Pro - entry point (interactive menu + CLI)
+# https://github.com/AndamAziz/vps-pro-maneger
+#==============================================================================
+
+SELF="$(readlink -f "${BASH_SOURCE[0]}")"
+VPSM_HOME="${VPSM_HOME:-$(dirname "$SELF")}"
+export VPSM_HOME
+
+for f in common users ssl xray hysteria wireguard openvpn squid ssh system bot; do
+    # shellcheck disable=SC1090
+    . "$VPSM_HOME/lib/$f.sh" || { echo "Cannot load $VPSM_HOME/lib/$f.sh" >&2; exit 1; }
+done
+
+#---- aggregated user helpers ------------------------------------------------------------
+
+user_links() { # all share links for NAME
+    user_exists "$1" || { err "User '$1' not found."; return 1; }
+    xray_user_links "$1"
+    hy2_user_link "$1"
+}
+
+user_show() { # user_show NAME [--qr]
+    local name="$1" qr="${2:-}" l
+    user_exists "$name" || { err "User '$name' not found."; return 1; }
+    jq -r --arg n "$name" '.[]|select(.name==$n)|
+        "  Name    : \(.name)\n  UUID    : \(.uuid)\n  Expires : \(if .expiry==0 then "never" else (.expiry|strftime("%Y-%m-%d")) end)"' "$USERS_DB"
+    echo ""
+    local links; links="$(user_links "$name")"
+    if [ -z "$links" ]; then warn "No protocols installed yet (Xray / Hysteria2). Install one first."; return 0; fi
+    while IFS= read -r l; do
+        [ -n "$l" ] || continue
+        echo -e "${GREEN}${l%%://*}${NC}"; echo "$l"; echo ""
+        [ "$qr" = "--qr" ] && { show_qr "$l"; echo ""; }
+    done <<<"$links"
+}
+
+users_menu() {
+    while true; do
+        menu_header "👥 Users  (Xray + Hysteria2, one account → all protocols)"
+        user_list; echo -e "$LINE"
+        echo "  1) Add user          4) Show links + QR"
+        echo "  2) Delete user       5) Traffic usage"
+        echo "  3) Renew user        0) Back"
+        echo -e "$LINE"
+        case "$(ask "Choose" "")" in
+            1) local n d; n="$(ask "Username" "")"; d="$(ask "Valid for N days (0 = unlimited)" 30)"
+               user_add "$n" "$d" && apply_all && user_show "$n" --qr; pause ;;
+            2) user_del "$(ask "Username" "")" && apply_all; pause ;;
+            3) user_renew "$(ask "Username" "")" "$(ask "Add N days (0 = unlimited)" 30)" && apply_all; pause ;;
+            4) user_show "$(ask "Username" "")" --qr; pause ;;
+            5) xray_show_usage; pause ;;
+            0|"") return ;;
+        esac
+    done
+}
+
+#---- main menu -------------------------------------------------------------------------------
+
+main_menu() {
+    while true; do
+        banner
+        echo -e "  ${DIM}IP: $(get_public_ip)   |   Xray: $(svc_state xray)   Hy2: $(svc_state hysteria-server)   WG: $(svc_state wg-quick@wg0)${NC}"
+        echo -e "$LINE"
+        echo "   1) ⚡ One-click setup (BBR + Reality + VMess-WS + first user)"
+        echo "   2) 👥 Users (accounts, links, QR, expiry)"
+        echo "   3) 🚀 Xray  (VLESS-Reality / VLESS / VMess / Trojan / Shadowsocks)"
+        echo "   4) ⚡ Hysteria 2"
+        echo "   5) 🛡️  WireGuard"
+        echo "   6) 🔒 OpenVPN"
+        echo "   7) 🔐 SSH, tunnel accounts & UDPGW"
+        echo "   8) 🌐 Squid HTTP proxy"
+        echo "   9) 📜 SSL certificates"
+        echo "  10) 🤖 Telegram bot"
+        echo "  11) ⚙️  System (BBR, firewall, backup, update)"
+        echo "   0) Exit"
+        echo -e "$LINE"
+        case "$(ask "Choose" "")" in
+            1) quick_setup "$(ask "First username" admin)"; pause ;;
+            2) users_menu ;;
+            3) xray_menu ;;
+            4) hy2_menu ;;
+            5) wg_menu ;;
+            6) ovpn_menu ;;
+            7) ssh_menu ;;
+            8) squid_menu ;;
+            9) ssl_menu ;;
+            10) bot_menu ;;
+            11) system_menu ;;
+            0|q|"") echo "Bye 👋"; exit 0 ;;
+        esac
+    done
+}
+
+#---- CLI -------------------------------------------------------------------------------------
+
+usage() {
+    cat <<EOF
+VPS Manager Pro v$VPSM_VERSION
+
+Usage: vpsmanager [command]
+
+  (no command)                    open the interactive menu
+  status                          server info and service states
+  quick-setup [first-user]        BBR + Xray (Reality, VMess-WS) + first user
+  user add <name> [days]          create a user (0 / omitted = unlimited)
+  user del <name>                 delete a user
+  user renew <name> <days>        extend a user
+  user list [--json]              list users
+  user show <name> [--qr]         links (and QR codes) for a user
+  user usage                      per-user traffic (Xray)
+  xray add <reality|vless-ws|vmess-ws|trojan|ss2022> <port> [domain] [sni|path]
+  xray del <tag> | xray list | xray install | xray update
+  hy2 install | wg add <name> | wg del <name> | ovpn add <name> | ovpn del <name>
+  ssh add <name> [days] [password] [max-logins] | ssh del <name> | ssh list
+  squid add <name> [password] | squid del <name>
+  expire                          apply expiry (runs daily from a systemd timer)
+  backup | restore <file>         configuration backup / restore
+  update                          update VPS Manager itself
+  version
+
+EOF
+}
+
+cli() {
+    export VPSM_NONINTERACTIVE=1
+    local cmd="${1:-}"; shift || true
+    case "$cmd" in
+        status)      sys_info; echo ""; sys_status ;;
+        quick-setup) quick_setup "${1:-admin}" ;;
+        user)
+            local sub="${1:-}"; shift || true
+            case "$sub" in
+                add)   user_add "$@" && apply_all ;;
+                del)   user_del "$@" && apply_all ;;
+                renew) user_renew "$@" && apply_all ;;
+                list)  user_list "$@" ;;
+                show)  user_show "$@" ;;
+                links) user_links "$@" ;;
+                usage) xray_show_usage ;;
+                *) usage; exit 1 ;;
+            esac ;;
+        xray)
+            local sub="${1:-}"; shift || true
+            case "$sub" in
+                add)     xray_add_inbound "$@" ;;
+                del)     xray_del_inbound "$@" ;;
+                list)    xray_list_inbounds ;;
+                install) xray_install && xray_apply ;;
+                update)  xray_update ;;
+                apply)   xray_apply ;;
+                *) usage; exit 1 ;;
+            esac ;;
+        hy2)  if [ "${1:-}" = install ]; then hy2_install; else usage; exit 1; fi ;;
+        wg)   case "${1:-}" in add) wg_add_client "$2" && wg_show_client "$2" ;; del) wg_del_client "$2" ;; install) wg_install ;; *) usage; exit 1 ;; esac ;;
+        ovpn) case "${1:-}" in add) ovpn_add_client "$2" ;; del) ovpn_del_client "$2" ;; install) ovpn_install ;; *) usage; exit 1 ;; esac ;;
+        ssh)  case "${1:-}" in add) shift; ssh_user_add "$@" ;; del) ssh_user_del "$2" ;; list) ssh_user_list ;; *) usage; exit 1 ;; esac ;;
+        squid) case "${1:-}" in add) squid_add_user "$2" "${3:-}" ;; del) squid_del_user "$2" ;; install) squid_install ;; *) usage; exit 1 ;; esac ;;
+        expire)  users_expire ;;
+        backup)  sys_backup ;;
+        restore) sys_restore "${1:-}" ;;
+        update)  sys_self_update ;;
+        version|-v|--version) echo "$VPSM_VERSION" ;;
+        help|-h|--help) usage ;;
+        *) usage; exit 1 ;;
+    esac
+}
+
+case "${1:-}" in
+    version|-v|--version) echo "$VPSM_VERSION"; exit 0 ;;
+    help|-h|--help) usage; exit 0 ;;
+esac
+
+require_root
+require_supported_os
+db_init
+for dep in jq curl openssl; do need_cmd "$dep" || exit 1; done
+
+if [ $# -eq 0 ]; then
+    [ -t 0 ] || die "The interactive menu needs a terminal. Run: vpsmanager help"
+    main_menu
+else
+    cli "$@"
+fi
