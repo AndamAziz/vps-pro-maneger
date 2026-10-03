@@ -132,34 +132,73 @@ wg_show_client() {
     cat "$f"; echo ""; show_qr "$(cat "$f")"
 }
 
-# wg_debug [seconds] - ask the kernel why a WireGuard handshake does (not) complete. Connect the tunnel on
-# your phone while this runs. Uses the module's dynamic debug messages, switched on only for the duration.
+# wg_debug [seconds] - find out why a WireGuard handshake does (not) complete. Connect the tunnel on your
+# phone while it runs. It combines three independent sources, because any single one can be misleading:
+#   1. tcpdump: did UDP packets reach the server, how big are they (a handshake initiation is exactly 148 bytes),
+#      and did the server send anything back
+#   2. the kernel's wireguard debug messages (received / invalid / answered)
+#   3. the peers' handshake times
 wg_debug() {
     local secs="${1:-40}" ctl="${WG_DEBUG_CTL:-/sys/kernel/debug/dynamic_debug/control}" mark log
+    local port ip tmp arrived answered inits sizes left kdbg=1 now ifc pk ts hs
     [[ "$secs" =~ ^[0-9]+$ ]] && [ "$secs" -ge 5 ] && [ "$secs" -le 300 ] || { err "Seconds must be 5-300."; return 1; }
     [ -n "$(wg show interfaces 2>/dev/null)" ] || { err "No WireGuard interface is up."; return 1; }
+    need_cmd tcpdump || return 1
+    port="$(wg_live_port)"; ip="$(get_public_ip)"; tmp="$(mktemp -d)"
+
     [ -w "$ctl" ] || mount -t debugfs none /sys/kernel/debug 2>/dev/null
-    [ -w "$ctl" ] || { err "The kernel debug interface is not available on this server."; return 1; }
-    echo 'module wireguard +p' > "$ctl" 2>/dev/null || { err "Cannot enable WireGuard kernel debugging."; return 1; }
+    if [ -w "$ctl" ] && echo 'module wireguard +p' > "$ctl" 2>/dev/null; then :; else kdbg=0; fi
     mark="$(date '+%Y-%m-%d %H:%M:%S')"
-    echo -e "${BOLD}${YELLOW}▶ Connect the WireGuard tunnel NOW on your phone/PC (${secs}s)...${NC}"
-    sleep "$secs"
-    echo 'module wireguard -p' > "$ctl" 2>/dev/null
-    log="$(journalctl -k --since "$mark" --no-pager 2>/dev/null | grep -i 'wireguard:' | sed 's/^.*wireguard: //' | tail -40)"
+    timeout "$secs" tcpdump -nn -l -i any "udp dst port $port and dst host $ip" > "$tmp/in" 2>/dev/null &
+    timeout "$secs" tcpdump -nn -l -i any "udp src port $port and src host $ip" > "$tmp/out" 2>/dev/null &
+
+    echo -e "${BOLD}${YELLOW}▶ Switch the WireGuard tunnel ON now, on your phone/PC (watching UDP $port for ${secs}s).${NC}"
+    left="$secs"
+    while [ "$left" -gt 0 ]; do
+        sleep $(( left > 15 ? 15 : left )); left=$(( left > 15 ? left - 15 : 0 ))
+        [ "$left" -gt 0 ] && echo "  ... ${left}s left"
+    done
+    wait
+    [ "$kdbg" = 1 ] && echo 'module wireguard -p' > "$ctl" 2>/dev/null
+
+    arrived="$(_cap_count "$tmp/in")"; answered="$(_cap_count "$tmp/out")"; arrived="${arrived:-0}"; answered="${answered:-0}"
+    inits="$(grep -cE 'length 148$' "$tmp/in" 2>/dev/null || true)"; inits="${inits:-0}"
+    sizes="$(grep -oE 'length [0-9]+' "$tmp/in" 2>/dev/null | sort | uniq -c | sort -rn | head -3 | awk '{printf "%s bytes x%s   ", $3, $1}')"
+    log="$(journalctl -k --since "$mark" --no-pager 2>/dev/null | grep -i 'wireguard:' | sed 's/^.*wireguard: //' | tail -30)"
+
+    echo -e "\n${BOLD}Network (UDP $port)${NC}"
+    echo "  packets that reached the server : $arrived   ${sizes:+(sizes: $sizes)}"
+    echo "  packets the server sent back    : $answered"
+    echo "  handshake initiations (148 B)   : $inits"
     echo -e "\n${BOLD}Kernel messages${NC}"
-    if [ -n "$log" ]; then echo "$log" | sed 's/^/  /'; else echo "  (none)"; fi
+    if [ -n "$log" ]; then echo "$log" | sed 's/^/  /'
+    elif [ "$kdbg" = 0 ]; then echo "  (kernel debugging is not available on this server - rely on the network numbers above)"
+    else echo "  (none)"; fi
+    echo -e "\n${BOLD}Peers${NC}"
+    now="$(date +%s)"
+    for ifc in $(wg show interfaces); do
+        while read -r pk ts; do
+            if [ "${ts:-0}" = 0 ]; then hs="${RED}NEVER${NC}"; else hs="${GREEN}$((now - ts))s ago${NC}"; fi
+            echo -e "  peer ${pk:0:10}…  handshake: $hs"
+        done < <(wg show "$ifc" latest-handshakes 2>/dev/null)
+    done
+
     echo -e "\n${BOLD}Verdict${NC}"
-    if grep -q "Receiving handshake initiation" <<<"$log"; then
-        ok "the server RECEIVED your handshake request (your packets do reach it)"
+    if [ "$arrived" -eq 0 ]; then
+        err "NO packet reached UDP $port during the window. Either the tunnel was not switched on while this ran, or the phone sends to another port/address (check the Endpoint in its config: it must be $ip:$port), or the network blocks it before the server."
+    elif [ "$inits" -eq 0 ]; then
+        warn "$arrived packet(s) arrived, but none is a WireGuard handshake (those are 148 bytes). They are probably something else, e.g. a browser trying QUIC / HTTP3 on UDP 443."
     else
-        err "the server received NO handshake request - nothing from your phone reached wg (blocked before the server, or the phone uses another endpoint/port)"
+        ok "$inits WireGuard handshake request(s) reached the server - the network path to it works."
+        if grep -qiE "Invalid (MAC|handshake)" <<<"$log"; then
+            err "...and the server REJECTED them: the keys do not match (wrong server public key, or this client's key / PresharedKey is not the registered one). Delete the tunnel in the app and import a FRESH config: vpsmanager wg add <new-name>"
+        elif [ "$answered" -gt 0 ] || grep -q "Sending handshake response" <<<"$log"; then
+            ok "...and the server ANSWERED ($answered packet(s)). If the app still shows no handshake, the answer does not get back to the phone (this network drops UDP replies from that port - try another port)."
+        else
+            err "...but the server sent NOTHING back. WireGuard silently drops handshakes it cannot verify, so this is almost certainly a KEY mismatch. Delete the tunnel in the app and import a FRESH config: vpsmanager wg add <new-name>"
+        fi
     fi
-    if grep -qiE "Invalid (MAC|handshake)" <<<"$log"; then
-        err "the server REJECTED it as invalid → keys do not match: the client has a wrong server public key / its own public key is not the one registered / the PresharedKey differs. Delete the old tunnel in the app and import a FRESH config:  vpsmanager wg add <new-name>"
-    fi
-    if grep -q "Sending handshake response" <<<"$log"; then
-        ok "the server ANSWERED. If the app still shows no handshake, the answer is not reaching the phone (the network drops UDP replies from this port - try another port)"
-    fi
+    rm -rf "$tmp"
 }
 
 wg_menu() {
