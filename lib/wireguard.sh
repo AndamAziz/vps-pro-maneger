@@ -132,6 +132,24 @@ wg_show_client() {
     cat "$f"; echo ""; show_qr "$(cat "$f")"
 }
 
+# _fw_deltas BEFORE AFTER
+# Prints "<packets>\t<rule>" for every iptables rule / chain policy whose packet counter grew between two
+# `iptables-save -c` snapshots, biggest first. Shows which rule actually handled (e.g. DROPPED) some traffic.
+_fw_deltas() {
+    awk '
+        function parse(line,   a, k, n) {
+            if (line ~ /^\[[0-9]+:[0-9]+\] /) {                       # rule:  [pkts:bytes] -A CHAIN ...
+                n = index(line, "] "); k = substr(line, n + 2); split(substr(line, 2, n - 2), a, ":")
+                KEY = k; CNT = a[1]; return 1 }
+            if (line ~ /^:[^ ]+ [A-Z]+ \[[0-9]+:[0-9]+\]$/) {         # policy: :CHAIN DROP [pkts:bytes]
+                split(line, f, " "); split(f[3], a, /[\[\]:]/)
+                KEY = "policy " substr(f[1], 2) " " f[2]; CNT = a[2]; return 1 }
+            return 0 }
+        FNR == NR { if (parse($0)) before[KEY] = CNT; next }
+        { if (parse($0)) { d = CNT - before[KEY]; if (d > 0) print d "\t" KEY } }
+    ' "$1" "$2" | sort -rn
+}
+
 # wg_debug [seconds] - find out why a WireGuard handshake does (not) complete. Connect the tunnel on your
 # phone while it runs. It combines three independent sources, because any single one can be misleading:
 #   1. tcpdump: did UDP packets reach the server, how big are they (a handshake initiation is exactly 148 bytes),
@@ -140,7 +158,7 @@ wg_show_client() {
 #   3. the peers' handshake times
 wg_debug() {
     local secs="${1:-40}" ctl="${WG_DEBUG_CTL:-/sys/kernel/debug/dynamic_debug/control}" mark log
-    local port ip tmp arrived answered inits sizes left kdbg=1 now ifc pk ts hs
+    local port ip tmp arrived answered inits sizes left kdbg=1 now ifc pk ts hs oldcost fwd
     [[ "$secs" =~ ^[0-9]+$ ]] && [ "$secs" -ge 5 ] && [ "$secs" -le 300 ] || { err "Seconds must be 5-300."; return 1; }
     [ -n "$(wg show interfaces 2>/dev/null)" ] || { err "No WireGuard interface is up."; return 1; }
     need_cmd tcpdump || return 1
@@ -149,6 +167,10 @@ wg_debug() {
     [ -w "$ctl" ] || mount -t debugfs none /sys/kernel/debug 2>/dev/null
     if [ -w "$ctl" ] && echo 'module wireguard +p' > "$ctl" 2>/dev/null; then :; else kdbg=0; fi
     mark="$(date '+%Y-%m-%d %H:%M:%S')"
+    # the kernel rate-limits its own network messages globally (shared with every other noisy source, e.g.
+    # conntrack) - switch that off for the test, restore afterwards
+    oldcost="$(sysctl -n net.core.message_cost 2>/dev/null)"; sysctl -qw net.core.message_cost=0 2>/dev/null
+    iptables-save -c > "$tmp/fw_before" 2>/dev/null
     timeout "$secs" tcpdump -nn -l -i any "udp dst port $port and dst host $ip" > "$tmp/in" 2>/dev/null &
     timeout "$secs" tcpdump -nn -l -i any "udp src port $port and src host $ip" > "$tmp/out" 2>/dev/null &
 
@@ -160,6 +182,9 @@ wg_debug() {
     done
     wait
     [ "$kdbg" = 1 ] && echo 'module wireguard -p' > "$ctl" 2>/dev/null
+    iptables-save -c > "$tmp/fw_after" 2>/dev/null
+    [ -n "$oldcost" ] && sysctl -qw net.core.message_cost="$oldcost" 2>/dev/null
+    fwd="$(_fw_deltas "$tmp/fw_before" "$tmp/fw_after" 2>/dev/null | grep -Ei 'udp|INVALID|DROP|REJECT|policy' | head -6)"
 
     arrived="$(_cap_count "$tmp/in")"; answered="$(_cap_count "$tmp/out")"; arrived="${arrived:-0}"; answered="${answered:-0}"
     inits="$(grep -cE 'length 148$' "$tmp/in" 2>/dev/null || true)"; inits="${inits:-0}"
@@ -170,6 +195,8 @@ wg_debug() {
     echo "  packets that reached the server : $arrived   ${sizes:+(sizes: $sizes)}"
     echo "  packets the server sent back    : $answered"
     echo "  handshake initiations (148 B)   : $inits"
+    echo -e "\n${BOLD}Firewall rules that counted packets during the test${NC}  (packets, rule)"
+    if [ -n "$fwd" ]; then echo "$fwd" | awk -F'\t' '{printf "  %7s  %s\n", $1, $2}'; else echo "  (none)"; fi
     echo -e "\n${BOLD}Kernel messages${NC}"
     if [ -n "$log" ]; then echo "$log" | sed 's/^/  /'
     elif [ "$kdbg" = 0 ]; then echo "  (kernel debugging is not available on this server - rely on the network numbers above)"
@@ -195,7 +222,8 @@ wg_debug() {
         elif [ "$answered" -gt 0 ] || grep -q "Sending handshake response" <<<"$log"; then
             ok "...and the server ANSWERED ($answered packet(s)). If the app still shows no handshake, the answer does not get back to the phone (this network drops UDP replies from that port - try another port)."
         else
-            err "...but the server sent NOTHING back. WireGuard silently drops handshakes it cannot verify, so this is almost certainly a KEY mismatch. Delete the tunnel in the app and import a FRESH config: vpsmanager wg add <new-name>"
+            err "...but the server sent NOTHING back and the kernel logged nothing: WireGuard probably never SAW them. Look at the firewall list above - a DROP/INVALID/policy line counting about $inits packets is the culprit (tcpdump sees packets BEFORE the firewall)."
+            echo "    If no firewall line explains it, the cause is a key mismatch: delete the tunnel in the app and import a FRESH config (vpsmanager wg add <new-name>)."
         fi
     fi
     rm -rf "$tmp"
