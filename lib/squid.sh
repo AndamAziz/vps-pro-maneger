@@ -17,7 +17,7 @@ squid_write_config() { # squid_write_config PORT
     local port="$1" ips access
     ips="$(squid_allowed)"
     if [ -n "$ips" ]; then
-        access="acl allowed_ips src $ips
+        access="acl allowed_ips src $ips 127.0.0.1/32 ::1/128
 http_access allow allowed_ips"
     else
         access="http_access allow all"
@@ -45,6 +45,26 @@ access_log none
 CONF
 }
 
+# Keep ufw in step with the access mode: in IP mode only those IPs may even reach the port.
+squid_fw_sync() { # squid_fw_sync PORT
+    fw_active || return 0
+    local port="$1" ips ip oldport
+    ips="$(squid_allowed)"
+    oldport="$(setting_get squid_fw_port)"; oldport="${oldport:-$port}"
+    for ip in $(setting_get squid_fw_ips); do
+        ufw delete allow from "$ip" to any port "$oldport" proto tcp >/dev/null 2>&1
+    done
+    setting_del squid_fw_ips
+    if [ -z "$ips" ]; then
+        ufw allow "$port/tcp" >/dev/null 2>&1
+    else
+        ufw delete allow "$port/tcp" >/dev/null 2>&1
+        for ip in $ips; do ufw allow from "$ip" to any port "$port" proto tcp >/dev/null 2>&1; done
+        setting_set squid_fw_ips "$ips"
+        setting_set squid_fw_port "$port"
+    fi
+}
+
 # Validate, restart and roll back on failure
 squid_apply() {
     squid_installed || { err "Squid is not installed."; return 1; }
@@ -55,7 +75,7 @@ squid_apply() {
         sleep 1
         if svc_active squid; then
             setting_set squid_port "$port"
-            fw_allow "$port" tcp
+            squid_fw_sync "$port"
             ok "Squid is running on TCP/$port"
             return 0
         fi
