@@ -11,6 +11,7 @@ import logging
 import os
 import re
 import subprocess
+import sys
 import tempfile
 from functools import wraps
 from pathlib import Path
@@ -20,6 +21,9 @@ from telegram.error import BadRequest
 from telegram.ext import Application, CallbackQueryHandler, CommandHandler, ContextTypes, MessageHandler, filters
 
 logging.basicConfig(format="%(asctime)s %(levelname)s %(message)s", level=logging.INFO)
+# httpx logs every request URL at INFO - and the Bot API URL contains the bot token
+for _noisy in ("httpx", "httpcore"):
+    logging.getLogger(_noisy).setLevel(logging.WARNING)
 log = logging.getLogger("vpsm-bot")
 
 TOKEN = os.environ["BOT_TOKEN"]
@@ -392,10 +396,15 @@ async def download(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     url = m.group(0)
     note = await update.effective_message.reply_text("⏳ Downloading...")
     with tempfile.TemporaryDirectory() as tmp:
-        cmd = ["yt-dlp", "--no-playlist", "--max-filesize", "49M", "-f", "b[filesize<49M]/bv*[filesize<40M]+ba/b",
-               "--merge-output-format", "mp4", "-o", f"{tmp}/%(title).80s.%(ext)s", url]
-        proc = await asyncio.create_subprocess_exec(
-            *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT)
+        # the venv's yt-dlp (systemd does not put the venv's bin directory on PATH)
+        cmd = [sys.executable, "-m", "yt_dlp", "--no-playlist", "--max-filesize", "49M",
+               "-f", "b[filesize<49M]/bv*[filesize<40M]+ba/b", "--merge-output-format", "mp4",
+               "-o", f"{tmp}/%(title).80s.%(ext)s", url]
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT)
+        except OSError as e:
+            return await note.edit_text(f"❌ Cannot start the downloader: {e}")
         try:
             out, _ = await asyncio.wait_for(proc.communicate(), timeout=600)
         except asyncio.TimeoutError:
