@@ -14,23 +14,34 @@ squid_auth_helper() {
     echo /usr/lib/squid/basic_ncsa_auth
 }
 
+squid_mode() { local m; m="$(setting_get squid_mode)"; echo "${m:-auth}"; }
+
 squid_write_config() { # squid_write_config PORT
-    local port="$1"
-    [ -f "$SQUID_CONF" ] && [ ! -f "$SQUID_CONF.vpsm-orig" ] && cp "$SQUID_CONF" "$SQUID_CONF.vpsm-orig"
-    cat > "$SQUID_CONF" <<EOF
-# Managed by VPS Manager Pro
-http_port $port
-auth_param basic program $(squid_auth_helper) $SQUID_PASSWD
+    local port="$1" mode ips access auth_lines=""
+    mode="$(squid_mode)"; ips="$(setting_get squid_allow_ips)"
+    case "$mode" in
+        open) access="http_access allow all" ;;
+        ip)   [ -n "$ips" ] || { err "No allowed IPs configured."; return 1; }
+              access="acl allowed_ips src $ips
+http_access allow allowed_ips" ;;
+        *)    access="acl authenticated proxy_auth REQUIRED
+http_access allow authenticated"
+              auth_lines="auth_param basic program $(squid_auth_helper) $SQUID_PASSWD
 auth_param basic realm Proxy
-auth_param basic credentialsttl 2 hours
-acl authenticated proxy_auth REQUIRED
+auth_param basic credentialsttl 2 hours" ;;
+    esac
+    [ -f "$SQUID_CONF" ] && [ ! -f "$SQUID_CONF.vpsm-orig" ] && cp "$SQUID_CONF" "$SQUID_CONF.vpsm-orig"
+    cat > "$SQUID_CONF" <<CONF
+# Managed by VPS Manager Pro (access mode: $mode)
+http_port $port
+$auth_lines
 acl SSL_ports port 443
 acl Safe_ports port 80 21 443 1025-65535
 acl CONNECT method CONNECT
 http_access deny !Safe_ports
 http_access deny CONNECT !SSL_ports
 http_access deny manager
-http_access allow authenticated
+$access
 http_access deny all
 forwarded_for delete
 via off
@@ -38,7 +49,38 @@ request_header_access X-Forwarded-For deny all
 dns_v4_first on
 cache deny all
 access_log /var/log/squid/access.log
-EOF
+CONF
+}
+
+# squid_set_mode auth | open | ip [IP...]
+squid_set_mode() {
+    squid_installed || { err "Squid is not installed."; return 1; }
+    local mode="${1:-}"; shift
+    local port; port="$(setting_get squid_port)"; port="${port:-3128}"
+    case "$mode" in
+        auth|open) ;;
+        ip) [ $# -gt 0 ] || { err "Give at least one IP: vpsmanager squid mode ip 1.2.3.4"; return 1; }
+            local ip
+            for ip in "$@"; do [[ "$ip" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}(/[0-9]{1,2})?$ ]] || { err "Invalid IP: $ip"; return 1; }; done
+            setting_set squid_allow_ips "$*" ;;
+        *) err "Mode must be: auth, ip or open"; return 1 ;;
+    esac
+    local prev_mode; prev_mode="$(squid_mode)"
+    setting_set squid_mode "$mode"
+    cp "$SQUID_CONF" "$SQUID_CONF.prev"
+    squid_write_config "$port" || { setting_set squid_mode "$prev_mode"; return 1; }
+    if squid -k parse >/dev/null 2>&1 && systemctl restart squid && svc_active squid; then
+        ok "Squid access mode: $mode"
+        case "$mode" in
+            open) warn "Anyone on the internet can use this proxy. Expect abuse; consider 'ip' mode." ;;
+            ip)   echo "  Allowed IPs: $*  → use http://$(get_public_ip):$port (no username/password)" ;;
+            auth) echo "  Username/password required." ;;
+        esac
+    else
+        err "Squid failed - restoring previous configuration."
+        setting_set squid_mode "$prev_mode"
+        cp "$SQUID_CONF.prev" "$SQUID_CONF"; systemctl restart squid; return 1
+    fi
 }
 
 squid_install() {
@@ -111,6 +153,7 @@ squid_menu() {
         echo "  5) Change port"
         echo "  6) Restart"
         echo "  7) Uninstall"
+        echo "  8) Access mode (now: $(squid_mode)) - open / IP-only / password"
         echo "  0) Back"
         echo -e "$LINE"
         case "$(ask "Choose" "")" in
@@ -124,6 +167,14 @@ squid_menu() {
                    systemctl disable --now squid >/dev/null 2>&1
                    DEBIAN_FRONTEND=noninteractive apt-get purge -y -qq squid >/dev/null 2>&1; ok "Squid removed"
                fi; pause ;;
+            8) echo "  1) open - no username/password, anyone can connect (risky)"
+               echo "  2) ip   - no password, only your IP(s) can connect (recommended)"
+               echo "  3) auth - username + password"
+               case "$(ask "Choose" "")" in
+                   1) confirm "Really open the proxy to the whole internet?" n && squid_set_mode open ;;
+                   2) read -ra _ips <<<"$(ask "Allowed IP(s), space separated" "${SSH_CLIENT%% *}")"; squid_set_mode ip "${_ips[@]}" ;;
+                   3) squid_set_mode auth ;;
+               esac; pause ;;
             0|"") return ;;
         esac
     done
