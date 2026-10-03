@@ -37,3 +37,7 @@ jobs:
         run: |
           pip install flake8
           flake8 --max-line-length 130 bot/
+      - name: Bot tests (inline buttons)
+        run: |
+          pip install "python-telegram-bot>=21,<23"
+          BOT_TOKEN=1:x ADMIN_IDS=1 python tests/test_bot.py

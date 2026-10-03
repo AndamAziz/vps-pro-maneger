@@ -107,6 +107,9 @@ vpsmanager squid ip open                # open to everyone again
 
 Other commands: `squid install [port]`, `squid restart`, `squid port N`, `squid test`.
 
+### Telegram bot
+Install from the menu (*Telegram bot*): token from @BotFather + your numeric admin ID. Send `/menu` (or `/start`) and use the buttons: **Status · Users · Add user · Delete user · Renew · Links · Traffic · Backup · WireGuard · OpenVPN · SSH account · Open ports**. Adding something asks for a name, then offers the validity as buttons; deleting asks for confirmation; WireGuard/OpenVPN send the config file(s) straight into the chat. Every action runs the same `vpsmanager` CLI, so the bot, the terminal menu and scripts share one state.
+
 ### SSH, tunnel accounts, UDPGW
 Change/add SSH port, root and password-login toggles, public keys, **expiring tunnel accounts** with max simultaneous logins, BadVPN UDPGW, SSH-WS (above).
 
@@ -117,7 +120,7 @@ Change/add SSH port, root and password-login toggles, public keys, **expiring tu
 - **Fail2ban** for SSH (5 failures → 1 h ban).
 - Let's Encrypt (certbot, auto-renew; Xray is stopped/started by hooks) with self-signed fallback.
 - Daily account-expiry sweep (systemd timer), backup/restore (`vpsmanager backup`, copy the archive off-server).
-- **Telegram admin bot** (`/add /del /renew /links /usage /status /backup /wg /ovpn /ssh`, yt-dlp downloader), admin-only.
+- **Telegram admin bot** with an **inline button menu** (`/menu`): status, users, add/delete/renew user, links, traffic, backup, open ports, WireGuard / OpenVPN client files, SSH tunnel accounts — plus the classic `/add /del /renew /links /usage /status /backup /wg /ovpn /ssh` commands and a yt-dlp video downloader. Admin-only (`ADMIN_IDS`).
 
 ## 🖥️ CLI reference
 
@@ -249,6 +252,9 @@ vpsmanager wg debug 60            # ئەگەر handshake نەکرا
 vpsmanager squid ip IPی_خۆت        # تەنها ئەو IP
 vpsmanager squid ip open           # بۆ هەموو
 ```
+
+### بۆتی تێلێگرام
+لە مێنیو دایبمەزرێنە (*Telegram bot*)، پاشان لە تێلێگرام بنووسە `/menu` و دوگمەکان بەکاربهێنە: دۆخ، بەکارهێنەران، زیادکردن/سڕینەوە/نوێکردنەوە، لینکەکان، ترافیک، باکئەپ، WireGuard، OpenVPN، SSH و پۆرتە کراوەکان. فەرمانە کۆنەکانی `/add` و `/del` ... هەر کار دەکەن.
 
 ### ئەگەر کار نەکرد
 1. `vpsmanager watch 60` — لە ماوەی ٦٠ چرکەدا لە مۆبایل پەیوەندی بکە. `arrived 0` = پەیوەندییەکە نەگەیشتووەتە سێرڤەر (بلۆکی ئینتەرنێت/فایەروالی دابینکەر).
