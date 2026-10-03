@@ -45,22 +45,37 @@ LIVE_PORT=""; wg() { case "$1" in show) return 1 ;; genkey) echo K ;; pubkey) re
 out="$(wg_add_client broken 2>&1)"; rc=$?
 check "interface down → clear error, no half-written client"        '[ $rc -ne 0 ] && grep -q "Cannot read the WireGuard port" <<<"$out" && [ ! -f "$WG_CLIENTS/broken.conf" ]'
 
-# --- wg_debug: the verdict follows what the kernel reports
+# --- wg_debug: verdict from tcpdump (arrived / size / answered) + kernel log
+. "$ROOT/lib/system.sh"            # _cap_count
+need_cmd() { return 0; }; get_public_ip() { echo 203.0.113.9; }; wg_live_port() { echo 443; }
 export WG_DEBUG_CTL="$TMP/dd_control"; : > "$WG_DEBUG_CTL"
-wg() { [ "${2:-}" = interfaces ] && echo wg0; }   # called as: wg show interfaces
-sleep() { :; }
-run_dbg() { KLOG="$1"; journalctl() { printf '%s\n' "$KLOG"; }; wg_debug 5 2>&1 | sed 's/\x1b\[[0-9;]*m//g'; }
-OK_LOG=$'kernel: wireguard: wg0: Receiving handshake initiation from peer 2 (92.40.218.69:5678)\nkernel: wireguard: wg0: Sending handshake response to peer 2 (92.40.218.69:5678)'
-BAD_LOG=$'kernel: wireguard: wg0: Receiving handshake initiation from peer 2 (92.40.218.69:5678)\nkernel: wireguard: wg0: Invalid handshake initiation from 92.40.218.69:5678'
-out="$(run_dbg "$OK_LOG")"
-check "wg_debug: request received + answered → says the answer must be lost on the way back" 'grep -q "RECEIVED" <<<"$out" && grep -q "ANSWERED" <<<"$out" && ! grep -q "REJECTED" <<<"$out"'
-out="$(run_dbg "$BAD_LOG")"
-check "wg_debug: invalid handshake → keys do not match, suggests a fresh config"              'grep -q "REJECTED" <<<"$out" && grep -q "wg add" <<<"$out"'
-out="$(run_dbg "")"
-check "wg_debug: no kernel messages → nothing reached wg"                                      'grep -q "received NO handshake request" <<<"$out"'
-check "wg_debug leaves kernel debugging switched OFF afterwards" '[ "$(cat "$WG_DEBUG_CTL")" = "module wireguard -p" ]'
+wg() { [ "${2:-}" = interfaces ] && echo wg0; }          # called as: wg show interfaces
+sleep() { :; }; timeout() { shift; "$@"; }
+IN=""; OUT=""; KLOG=""
+tcpdump() { case "$*" in *"dst port"*) printf '%b' "$IN" ;; *"src port"*) printf '%b' "$OUT" ;; esac; }
+journalctl() { printf '%s\n' "$KLOG"; }
+init_line() { printf '00:00:01 ens6  In  IP 92.40.218.68.5000 > 203.0.113.9.443: UDP, length 148\n'; }
+dbg() { wg_debug 5 2>&1 | sed 's/\x1b\[[0-9;]*m//g'; }
+
+IN=""; OUT=""; KLOG=""; out="$(dbg)"
+check "nothing arrived → says the tunnel may not have been switched on / wrong endpoint" 'grep -q "NO packet reached UDP 443" <<<"$out"'
+
+IN="$(for i in 1 2 3; do init_line; done)\n"; OUT=""; KLOG=""; out="$(dbg)"
+check "148-byte handshakes counted and recognised"                                'grep -q "handshake initiations (148 B)   : 3" <<<"$out" && grep -q "148 bytes x3" <<<"$out"'
+check "initiations arrived, server sent nothing → key mismatch advice"            'grep -q "sent NOTHING back" <<<"$out" && grep -q "wg add" <<<"$out"'
+
+KLOG=$'kernel: wireguard: wg0: Invalid handshake initiation from 92.40.218.68:5000'; out="$(dbg)"
+check "kernel says Invalid → REJECTED, keys do not match"                         'grep -q "REJECTED" <<<"$out"'
+
+KLOG=""; OUT='00:00:02 ens6  Out IP 203.0.113.9.443 > 92.40.218.68.5000: UDP, length 92\n'; out="$(dbg)"
+check "server replied → says the answer must be getting lost on the way back"      'grep -q "ANSWERED" <<<"$out" && ! grep -q "REJECTED" <<<"$out"'
+
+IN='00:00:01 ens6  In  IP 92.40.218.68.5000 > 203.0.113.9.443: UDP, length 1200\n'; OUT=""; KLOG=""; out="$(dbg)"
+check "non-148-byte packets (QUIC from a browser) are not mistaken for WireGuard"  'grep -q "none is a WireGuard handshake" <<<"$out"'
+
 wg() { return 1; }
 out="$(wg_debug 5 2>&1)"; rc=$?
-check "wg_debug: no interface up → clear error"                                                 '[ $rc -ne 0 ] && grep -q "No WireGuard interface is up" <<<"$out"'
+check "no interface up → clear error"                                               '[ $rc -ne 0 ] && grep -q "No WireGuard interface is up" <<<"$out"'
+check "wg_debug leaves kernel debugging switched OFF afterwards"                   '[ "$(cat "$WG_DEBUG_CTL")" = "module wireguard -p" ]'
 
 [ $fail = 0 ] && echo "ALL WIREGUARD TESTS PASSED" || { echo "SOME TESTS FAILED"; exit 1; }
