@@ -77,6 +77,30 @@ squid_del_user() {
     systemctl reload squid 2>/dev/null || true
 }
 
+squid_change_port() {
+    squid_installed || { err "Squid is not installed."; return 1; }
+    local old new
+    old="$(setting_get squid_port)"; old="${old:-3128}"
+    new="$(ask "New port" 3128)"
+    valid_port "$new" || { err "Invalid port."; return 1; }
+    if [ "$new" != "$old" ] && port_in_use "$new" tcp; then
+        err "Port $new is already used by another service:"
+        ss -ltnp 2>/dev/null | awk -v p=":$new\$" '$4 ~ p {print "   " $0}'
+        return 1
+    fi
+    cp "$SQUID_CONF" "$SQUID_CONF.prev"
+    squid_write_config "$new"
+    if squid -k parse >/dev/null 2>&1 && systemctl restart squid && svc_active squid; then
+        setting_set squid_port "$new"; fw_allow "$new" tcp
+        [ "$new" != "$old" ] && fw_deny "$old" tcp
+        ok "Squid now listens on TCP/$new"
+    else
+        err "Squid failed with port $new - restoring the previous configuration."
+        cp "$SQUID_CONF.prev" "$SQUID_CONF"; systemctl restart squid
+        return 1
+    fi
+}
+
 squid_menu() {
     while true; do
         menu_header "🌐 Squid HTTP Proxy   [$(svc_state squid)]"
@@ -94,8 +118,7 @@ squid_menu() {
             2) squid_add_user "$(ask "Username" "")" "$(ask "Password (empty = random)" "")"; pause ;;
             3) squid_del_user "$(ask "Username" "")"; pause ;;
             4) cut -d: -f1 "$SQUID_PASSWD" 2>/dev/null || echo "none"; pause ;;
-            5) squid_installed && { local old new; old="$(setting_get squid_port)"; new="$(ask_port "New" 3128)" &&
-                 { squid_write_config "$new"; setting_set squid_port "$new"; fw_deny "$old" tcp; fw_allow "$new" tcp; svc_restart squid; }; }; pause ;;
+            5) squid_change_port; pause ;;
             6) svc_restart squid; pause ;;
             7) if confirm "Remove Squid?" n; then
                    systemctl disable --now squid >/dev/null 2>&1
