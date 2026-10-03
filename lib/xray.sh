@@ -51,11 +51,13 @@ xray_uninstall() {
 #---- config generation --------------------------------------------------------
 
 xray_build_config() {
-    local tmpu bt=true
+    local tmpu bt=true loglevel
     [ "$(setting_get block_bittorrent)" = 0 ] && bt=false
+    # 'error' keeps the journal quiet: scanners / stale clients hitting 80/443 would otherwise log a warning each
+    loglevel="$(setting_get xray_loglevel)"; loglevel="${loglevel:-error}"
     tmpu="$(mktemp)"; users_active > "$tmpu"
     jq -n --slurpfile ib "$XRAY_INB" --slurpfile us "$tmpu" \
-          --argjson bt "$bt" --argjson apiport "$XRAY_API_PORT" '
+          --argjson bt "$bt" --argjson apiport "$XRAY_API_PORT" --arg ll "$loglevel" '
       ($us[0]) as $u | ($ib[0]) as $I |
       def sniff: {enabled:true, destOverride:["http","tls","quic"]};
       def tlsset($i; $alpn): {security:"tls",
@@ -113,7 +115,7 @@ xray_build_config() {
            sniffing:sniff}
         else empty end;
       {
-        log:{loglevel:"warning"},
+        log:{loglevel:$ll},
         stats:{},
         api:{tag:"api", services:["StatsService"]},
         policy:{levels:{"0":{statsUserUplink:true, statsUserDownlink:true}}},

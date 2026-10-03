@@ -71,6 +71,11 @@ check "multi-ws: plain vless on 80"     'grep -q "^vless://.*@example.com:80?.*s
 check "multi-ws: trojan ws link"        'grep -q "^trojan://.*@example.com:443?security=tls&type=ws" <<<"$links"'
 check "multi-ws: ss ws link"            'grep -q "^ss://[A-Za-z0-9_-]*@example.com:80?type=ws&security=none" <<<"$links"'
 
+check "xray log level defaults to error" '[ "$(xray_build_config | jq -r .log.loglevel)" = error ]'
+setting_set xray_loglevel warning
+check "xray log level overridable"       '[ "$(xray_build_config | jq -r .log.loglevel)" = warning ]'
+setting_del xray_loglevel
+
 # --- hysteria2 config
 HY2_BIN=/bin/true; HY2_DIR="$TMP/hy"; HY2_CONF="$HY2_DIR/config.yaml"; mkdir -p "$HY2_DIR"
 setting_set hy2_port 443; setting_set hy2_obfs secret
