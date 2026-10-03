@@ -45,4 +45,22 @@ LIVE_PORT=""; wg() { case "$1" in show) return 1 ;; genkey) echo K ;; pubkey) re
 out="$(wg_add_client broken 2>&1)"; rc=$?
 check "interface down → clear error, no half-written client"        '[ $rc -ne 0 ] && grep -q "Cannot read the WireGuard port" <<<"$out" && [ ! -f "$WG_CLIENTS/broken.conf" ]'
 
+# --- wg_debug: the verdict follows what the kernel reports
+export WG_DEBUG_CTL="$TMP/dd_control"; : > "$WG_DEBUG_CTL"
+wg() { [ "${2:-}" = interfaces ] && echo wg0; }   # called as: wg show interfaces
+sleep() { :; }
+run_dbg() { KLOG="$1"; journalctl() { printf '%s\n' "$KLOG"; }; wg_debug 5 2>&1 | sed 's/\x1b\[[0-9;]*m//g'; }
+OK_LOG=$'kernel: wireguard: wg0: Receiving handshake initiation from peer 2 (92.40.218.69:5678)\nkernel: wireguard: wg0: Sending handshake response to peer 2 (92.40.218.69:5678)'
+BAD_LOG=$'kernel: wireguard: wg0: Receiving handshake initiation from peer 2 (92.40.218.69:5678)\nkernel: wireguard: wg0: Invalid handshake initiation from 92.40.218.69:5678'
+out="$(run_dbg "$OK_LOG")"
+check "wg_debug: request received + answered → says the answer must be lost on the way back" 'grep -q "RECEIVED" <<<"$out" && grep -q "ANSWERED" <<<"$out" && ! grep -q "REJECTED" <<<"$out"'
+out="$(run_dbg "$BAD_LOG")"
+check "wg_debug: invalid handshake → keys do not match, suggests a fresh config"              'grep -q "REJECTED" <<<"$out" && grep -q "wg add" <<<"$out"'
+out="$(run_dbg "")"
+check "wg_debug: no kernel messages → nothing reached wg"                                      'grep -q "received NO handshake request" <<<"$out"'
+check "wg_debug leaves kernel debugging switched OFF afterwards" '[ "$(cat "$WG_DEBUG_CTL")" = "module wireguard -p" ]'
+wg() { return 1; }
+out="$(wg_debug 5 2>&1)"; rc=$?
+check "wg_debug: no interface up → clear error"                                                 '[ $rc -ne 0 ] && grep -q "No WireGuard interface is up" <<<"$out"'
+
 [ $fail = 0 ] && echo "ALL WIREGUARD TESTS PASSED" || { echo "SOME TESTS FAILED"; exit 1; }

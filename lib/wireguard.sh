@@ -132,6 +132,36 @@ wg_show_client() {
     cat "$f"; echo ""; show_qr "$(cat "$f")"
 }
 
+# wg_debug [seconds] - ask the kernel why a WireGuard handshake does (not) complete. Connect the tunnel on
+# your phone while this runs. Uses the module's dynamic debug messages, switched on only for the duration.
+wg_debug() {
+    local secs="${1:-40}" ctl="${WG_DEBUG_CTL:-/sys/kernel/debug/dynamic_debug/control}" mark log
+    [[ "$secs" =~ ^[0-9]+$ ]] && [ "$secs" -ge 5 ] && [ "$secs" -le 300 ] || { err "Seconds must be 5-300."; return 1; }
+    [ -n "$(wg show interfaces 2>/dev/null)" ] || { err "No WireGuard interface is up."; return 1; }
+    [ -w "$ctl" ] || mount -t debugfs none /sys/kernel/debug 2>/dev/null
+    [ -w "$ctl" ] || { err "The kernel debug interface is not available on this server."; return 1; }
+    echo 'module wireguard +p' > "$ctl" 2>/dev/null || { err "Cannot enable WireGuard kernel debugging."; return 1; }
+    mark="$(date '+%Y-%m-%d %H:%M:%S')"
+    echo -e "${BOLD}${YELLOW}▶ Connect the WireGuard tunnel NOW on your phone/PC (${secs}s)...${NC}"
+    sleep "$secs"
+    echo 'module wireguard -p' > "$ctl" 2>/dev/null
+    log="$(journalctl -k --since "$mark" --no-pager 2>/dev/null | grep -i 'wireguard:' | sed 's/^.*wireguard: //' | tail -40)"
+    echo -e "\n${BOLD}Kernel messages${NC}"
+    if [ -n "$log" ]; then echo "$log" | sed 's/^/  /'; else echo "  (none)"; fi
+    echo -e "\n${BOLD}Verdict${NC}"
+    if grep -q "Receiving handshake initiation" <<<"$log"; then
+        ok "the server RECEIVED your handshake request (your packets do reach it)"
+    else
+        err "the server received NO handshake request - nothing from your phone reached wg (blocked before the server, or the phone uses another endpoint/port)"
+    fi
+    if grep -qiE "Invalid (MAC|handshake)" <<<"$log"; then
+        err "the server REJECTED it as invalid → keys do not match: the client has a wrong server public key / its own public key is not the one registered / the PresharedKey differs. Delete the old tunnel in the app and import a FRESH config:  vpsmanager wg add <new-name>"
+    fi
+    if grep -q "Sending handshake response" <<<"$log"; then
+        ok "the server ANSWERED. If the app still shows no handshake, the answer is not reaching the phone (the network drops UDP replies from this port - try another port)"
+    fi
+}
+
 wg_menu() {
     while true; do
         menu_header "🛡️  WireGuard   [$(svc_state "wg-quick@$WG_IF")]"

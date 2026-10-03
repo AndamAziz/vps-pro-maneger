@@ -114,7 +114,7 @@ Usage: vpsmanager [command]
   user usage                      per-user traffic (Xray)
   xray add <reality|vless-ws|vmess-ws|trojan|ss2022> <port> [domain] [sni|path]
   xray del <tag> | xray list | xray install | xray update | xray test | xray loglevel [level]
-  hy2 install [port] [domain|-] | wg add <name> | wg del <name> | ovpn add <name> | ovpn del <name>
+  hy2 install [port] [domain|-] | wg debug [seconds] | wg add <name> | wg del <name> | ovpn add <name> | ovpn del <name>
   ssh add <name> [days] [password] [max-logins] | ssh del <name> | ssh list
   squid install [port] | restart | port <n> | test | ip <IP...|open>
   ports                           show every open (listening) port
@@ -163,7 +163,7 @@ cli() {
                 *) usage; exit 1 ;;
             esac ;;
         hy2)  if [ "${1:-}" = install ]; then shift; hy2_install "$@"; else usage; exit 1; fi ;;
-        wg)   case "${1:-}" in add) wg_add_client "$2" && wg_show_client "$2" ;; del) wg_del_client "$2" ;; install) wg_install ;; *) usage; exit 1 ;; esac ;;
+        wg)   case "${1:-}" in debug) wg_debug "${2:-40}" ;; add) wg_add_client "$2" && wg_show_client "$2" ;; del) wg_del_client "$2" ;; install) wg_install ;; *) usage; exit 1 ;; esac ;;
         ovpn) case "${1:-}" in add) ovpn_add_client "$2" ;; del) ovpn_del_client "$2" ;; install) ovpn_install ;; *) usage; exit 1 ;; esac ;;
         ssh)  case "${1:-}" in add) shift; ssh_user_add "$@" ;; del) ssh_user_del "$2" ;; list) ssh_user_list ;; *) usage; exit 1 ;; esac ;;
         squid) case "${1:-}" in
