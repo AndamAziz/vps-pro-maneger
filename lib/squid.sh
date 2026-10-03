@@ -17,7 +17,8 @@ squid_write_config() { # squid_write_config PORT
     local port="$1" ips access
     ips="$(squid_allowed)"
     if [ -n "$ips" ]; then
-        access="acl allowed_ips src $ips 127.0.0.1/32 ::1/128
+        # localhost and the server's own address are always allowed (self-test)
+        access="acl allowed_ips src $ips 127.0.0.1/32 ::1/128 $(get_public_ip)/32
 http_access allow allowed_ips"
     else
         access="http_access allow all"
