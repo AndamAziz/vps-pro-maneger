@@ -74,4 +74,23 @@ ADDED=$'ufw allow 22/tcp\n'; UFW=(); fw_enable >/dev/null 2>&1; rc=$?
 check "ufw enabled once SSH is allowed"                   '[ $rc -eq 0 ] && printf "%s\n" "${UFW[@]}" | grep -q -- "--force enable"'
 check "SSH rule is added before enabling"                 'printf "%s\n" "${UFW[@]}" | grep -qx "allow 22/tcp"'
 
+# 6) ports of services that are really running are opened (WireGuard on UDP 443, hysteria on 666 ...)
+wg() { case "$1" in interfaces) echo wg0 ;; show) echo 443 ;; esac; }
+ss() { cat <<'SS'
+udp   UNCONN 0 0 0.0.0.0:443     0.0.0.0:*
+udp   UNCONN 0 0 *:666           *:*  users:(("hysteria",pid=1,fd=3))
+tcp   LISTEN 0 4 0.0.0.0:8443    0.0.0.0:*  users:(("xray",pid=2,fd=4))
+tcp   LISTEN 0 4 127.0.0.1:10801 0.0.0.0:*  users:(("xray",pid=2,fd=5))
+tcp   LISTEN 0 4 *:8080          *:*  users:(("squid",pid=3,fd=6))
+udp   UNCONN 0 0 *:19809         *:*  users:(("squid",pid=3,fd=7))
+tcp   LISTEN 0 4 127.0.0.1:44870 0.0.0.0:*  users:(("httpd",pid=9,fd=3))
+SS
+}
+ADDED=$'ufw allow 22/tcp\n'; UFW=(); fw_enable >/dev/null 2>&1
+check "WireGuard's real UDP port (443) is allowed"      'printf "%s\n" "${UFW[@]}" | grep -qx "allow 443/udp"'
+check "hysteria's real UDP port (666) is allowed"       'printf "%s\n" "${UFW[@]}" | grep -qx "allow 666/udp"'
+check "xray public TCP port (8443) is allowed"          'printf "%s\n" "${UFW[@]}" | grep -qx "allow 8443/tcp"'
+check "squid TCP port is allowed, its random UDP not"   'printf "%s\n" "${UFW[@]}" | grep -qx "allow 8080/tcp" && ! printf "%s\n" "${UFW[@]}" | grep -q "19809"'
+check "loopback-only listeners are NOT opened"          '! printf "%s\n" "${UFW[@]}" | grep -qE "10801|44870"'
+
 [ $fail = 0 ] && echo "ALL FULL-SETUP TESTS PASSED" || { echo "SOME TESTS FAILED"; exit 1; }

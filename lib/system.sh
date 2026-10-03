@@ -145,6 +145,21 @@ fw_enable() {
         p="$(setting_get "${kv%%:*}")"; [ -n "$p" ] && ufw allow "$p/${kv#*:}" >/dev/null 2>&1
     done
     ufw allow 80/tcp >/dev/null 2>&1
+    # What is REALLY running, whatever port it uses (an existing install may differ from our settings):
+    # WireGuard is a kernel socket without a process name, so ask wg itself.
+    local ifc wp proto lport
+    for ifc in $(wg show interfaces 2>/dev/null); do
+        wp="$(wg show "$ifc" listen-port 2>/dev/null)"
+        [ -n "$wp" ] && [ "$wp" != 0 ] && ufw allow "$wp/udp" >/dev/null 2>&1
+    done
+    # public listeners of the proxy services we manage (squid UDP ports are random, so only its TCP port)
+    while read -r proto lport; do
+        ufw allow "$lport/$proto" >/dev/null 2>&1
+    done < <(ss -H -lntup 2>/dev/null | awk '
+        $5 ~ /^(127\.|\[::1\])/ { next }
+        { n = split($5, a, ":"); port = a[n] }
+        /"(xray|hysteria|openvpn)"/ { print $1, port }
+        /"squid"/ && $1 == "tcp"    { print $1, port }')
     # safety: refuse to turn the firewall on if SSH is not in the allowed set (would lock you out)
     for p in $sshports; do
         ufw show added 2>/dev/null | grep -Eq "allow ($p|$p/tcp)\b" || { err "SSH port $p is not allowed in ufw - NOT enabling the firewall."; return 1; }
