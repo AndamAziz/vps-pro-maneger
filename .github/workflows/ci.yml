@@ -26,6 +26,8 @@ jobs:
         run: bash tests/test_installer_sync.sh
       - name: WireGuard tests
         run: bash tests/test_wireguard.sh
+      - name: OpenVPN UDP+TCP tests
+        run: bash tests/test_openvpn.sh
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
