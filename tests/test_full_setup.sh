@@ -141,4 +141,12 @@ check "top sources are listed with their counts"              'grep -q "92.40.21
 out="$(row "TCP 8080" "$TMP/in.cap" "$TMP/empty.cap")"
 check "arrived but answered 0 (firewall drop) is visible"     'grep -Eq "arrived +3 +answered +0" <<<"$out"'
 
+# a SYN scanner that never completes the handshake makes the server retransmit its SYN-ACK: still ONE connection
+printf '00:00:01 ens6  In  IP 185.224.128.16.40000 > 213.171.212.110.443: Flags [S], length 0\n\n' > "$TMP/scan_in.cap"
+for i in 1 2 3 4 5 6; do printf '00:00:0%d ens6  Out IP 213.171.212.110.443 > 185.224.128.16.40000: Flags [S.], length 0\n' "$i"; done > "$TMP/scan_out.cap"
+out="$(row "TCP 443" "$TMP/scan_in.cap" "$TMP/scan_out.cap")"
+check "SYN-ACK retransmissions count as ONE answered connection" 'grep -Eq "arrived +1 +answered +1" <<<"$out"'
+out="$(_watch_row "UDP 443" "$TMP/in.cap" "$TMP/empty.cap" packets | sed 's/\x1b\[[0-9;]*m//g')"
+check "UDP rows still count packets (WireGuard retries are informative)" 'grep -Eq "arrived +3 +answered +0" <<<"$out"'
+
 [ $fail = 0 ] && echo "ALL FULL-SETUP TESTS PASSED" || { echo "SOME TESTS FAILED"; exit 1; }
