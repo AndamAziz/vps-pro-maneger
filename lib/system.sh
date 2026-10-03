@@ -110,7 +110,7 @@ fw_enable() {
     local p
     for p in $(ssh_current_ports); do ufw allow "$p/tcp" >/dev/null; done
     # open everything the manager has configured
-    [ -s "$XRAY_INB" ] && jq -r '.[]|"\(.port) \(.type)"' "$XRAY_INB" | while read -r port type; do
+    [ -s "$XRAY_INB" ] && jq -r '.[] | . as $i | [$i.port, ($i.plain_port // empty)] | .[] | "\(.) \($i.type)"' "$XRAY_INB" | while read -r port type; do
         [ "$type" = ss2022 ] && ufw allow "$port" >/dev/null || ufw allow "$port/tcp" >/dev/null; done
     for kv in hy2_port:udp wg_port:udp ovpn_port:"$(setting_get ovpn_proto)" squid_port:tcp; do
         p="$(setting_get "${kv%%:*}")"; [ -n "$p" ] && ufw allow "$p/${kv#*:}" >/dev/null 2>&1

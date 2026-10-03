@@ -54,12 +54,18 @@ ssl_issue() {
         warn "Point the A record to $pub first (disable the Cloudflare proxy while issuing)."
         confirm "Try anyway?" n || return 1
     fi
+    local hooks=()
     if port_in_use 80 tcp; then
-        warn "Port 80 is busy - certbot needs it for the HTTP-01 challenge."
-        confirm "Continue anyway?" n || return 1
+        if ss -ltnp 2>/dev/null | awk '$4 ~ /:80$/' | grep -q '"xray"'; then
+            info "Xray is using port 80 - it will be stopped briefly while the certificate is issued/renewed."
+            hooks=(--pre-hook "systemctl stop xray" --post-hook "systemctl start xray")
+        else
+            warn "Port 80 is busy - certbot needs it for the HTTP-01 challenge."
+            confirm "Continue anyway?" n || return 1
+        fi
     fi
     fw_allow 80 tcp
-    local args=(certonly --standalone -d "$domain" --agree-tos --non-interactive --keep-until-expiring)
+    local args=(certonly --standalone -d "$domain" --agree-tos --non-interactive --keep-until-expiring "${hooks[@]}")
     if [ -n "$email" ]; then args+=(-m "$email"); else args+=(--register-unsafely-without-email); fi
     if certbot "${args[@]}"; then
         ok "Certificate issued for $domain"

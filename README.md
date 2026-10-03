@@ -23,7 +23,7 @@ Then open the menu any time with `vpsmanager` (or `menu`). Re-running the instal
 | Module | Features |
 |---|---|
 | **Users** | One account → links + QR for every installed protocol, expiry/renew, hourly expiry sweep (systemd timer), per-user traffic |
-| **Xray-core** | VLESS+Reality+Vision (no domain needed), VLESS-WS, VMess-WS (TLS optional), Trojan, Shadowsocks-2022; config auto-generated and validated (`xray run -test`) before every restart; BitTorrent + private-IP blocking |
+| **Xray-core** | **All-in-one WebSocket: VLESS + VMess + Trojan + Shadowsocks on port 443 (SSL) *and* port 80 (no SSL)** (separated by path), VLESS+Reality+Vision (no domain needed), VLESS-WS, VMess-WS (TLS optional), Trojan, Shadowsocks-2022; config auto-generated and validated (`xray run -test`) before every restart; BitTorrent + private-IP blocking |
 | **Hysteria 2** | QUIC/UDP, userpass auth, Salamander obfuscation, built-in ACME or self-signed |
 | **WireGuard** | Server setup, clients with preshared keys, config file + QR, live add/remove |
 | **OpenVPN** | easy-rsa 3 (ECDSA), tls-crypt, AES-256-GCM, UDP/TCP, `.ovpn` profiles, revocation |
@@ -41,6 +41,7 @@ vpsmanager user add alice 30          # 30 days (omit / 0 = unlimited)
 vpsmanager user show alice --qr       # links + QR codes
 vpsmanager user renew alice 30
 vpsmanager user usage
+vpsmanager xray add multi-ws 443 example.com 80   # WS on 443 (SSL) + 80 (plain), all 4 protocols
 vpsmanager xray add reality 443 "" www.microsoft.com
 vpsmanager xray add vless-ws 8443 cdn.example.com /ws
 vpsmanager xray add trojan 2053 example.com

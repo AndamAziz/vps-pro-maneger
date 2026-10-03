@@ -85,6 +85,27 @@ xray_build_config() {
            settings:{clients:[$u[]|{password:.password, email:.name}]},
            streamSettings:({network:"tcp"} + tlsset($i; ["h2","http/1.1"])),
            sniffing:sniff}
+        elif $i.type=="multi-ws" then
+          ([{path:$i.pVless, dest:$i.lVless}, {path:$i.pVmess, dest:$i.lVmess},
+            {path:$i.pTrojan, dest:$i.lTrojan}, {path:$i.pSs, dest:$i.lSs}]) as $fb |
+          def outer($tag; $port; $stream):
+            {tag:$tag, listen:"0.0.0.0", port:$port, protocol:"vless",
+             settings:{clients:[$u[]|{id:.uuid, email:.name}], decryption:"none", fallbacks:$fb},
+             streamSettings:$stream};
+          outer($i.tag+"-tls"; $i.port; ({network:"tcp"} + tlsset($i; ["http/1.1"]))),
+          outer($i.tag+"-plain"; $i.plain_port; {network:"tcp", security:"none"}),
+          ({tag:($i.tag+"-vless"), listen:"127.0.0.1", port:$i.lVless, protocol:"vless", sniffing:sniff,
+            settings:{clients:[$u[]|{id:.uuid, email:.name}], decryption:"none"},
+            streamSettings:{network:"ws", security:"none", wsSettings:{path:$i.pVless}}}),
+          ({tag:($i.tag+"-vmess"), listen:"127.0.0.1", port:$i.lVmess, protocol:"vmess", sniffing:sniff,
+            settings:{clients:[$u[]|{id:.uuid, email:.name, alterId:0}]},
+            streamSettings:{network:"ws", security:"none", wsSettings:{path:$i.pVmess}}}),
+          ({tag:($i.tag+"-trojan"), listen:"127.0.0.1", port:$i.lTrojan, protocol:"trojan", sniffing:sniff,
+            settings:{clients:[$u[]|{password:.password, email:.name}]},
+            streamSettings:{network:"ws", security:"none", wsSettings:{path:$i.pTrojan}}}),
+          ({tag:($i.tag+"-ss"), listen:"127.0.0.1", port:$i.lSs, protocol:"shadowsocks", sniffing:sniff,
+            settings:{network:"tcp,udp", clients:[$u[]|{method:"chacha20-ietf-poly1305", password:.password, email:.name}]},
+            streamSettings:{network:"ws", security:"none", wsSettings:{path:$i.pSs}}})
         elif $i.type=="ss2022" then
           {tag:$i.tag, listen:"0.0.0.0", port:$i.port, protocol:"shadowsocks",
            settings:{method:"2022-blake3-aes-128-gcm", password:$i.serverKey, network:"tcp,udp",
@@ -153,6 +174,13 @@ xray_add_inbound() {
     tag="${type}-${port}"
     port_used_by_other "$port" && { err "Port $port is already used by another service."; return 1; }
     xray_inbound_exists "$tag" && { err "Inbound $tag already exists."; return 1; }
+    local plain_port="${extra:-80}" chk
+    for chk in "$port" $([ "$type" = multi-ws ] && echo "$plain_port"); do
+        if jq -e --argjson p "$chk" 'any(.[]; .port==$p or .plain_port==$p)' "$XRAY_INB" >/dev/null 2>&1; then
+            err "Port $chk is already used by another Xray protocol (remove it first)."; return 1
+        fi
+        [ "$type" = multi-ws ] && port_used_by_other "$chk" && { err "Port $chk is already used by another service."; return 1; }
+    done
     [ -s "$XRAY_INB" ] || echo '[]' > "$XRAY_INB"
 
     case "$type" in
@@ -181,6 +209,24 @@ xray_add_inbound() {
             json="$(jq -n --arg tag "$tag" --argjson port "$port" --arg host "$domain" --argjson insecure "$insecure" \
                 --arg cert "$cert" --arg key "$key" \
                 '{tag:$tag,type:"trojan",port:$port,host:$host,tls:true,insecure:$insecure,cert:$cert,key:$key}')" ;;
+        multi-ws)
+            # VLESS + VMess + Trojan + Shadowsocks over WebSocket on one TLS port (443) and one plain port (80),
+            # separated by URL path through VLESS fallbacks to loopback inbounds.
+            xray_inbound_exists "multi-ws-$port" || jq -e 'any(.[]; .type=="multi-ws")' "$XRAY_INB" >/dev/null 2>&1 \
+                && { err "The all-in-one WebSocket setup already exists (remove it first)."; return 1; }
+            valid_port "$plain_port" || { err "Invalid plain port."; return 1; }
+            local base insecure=false
+            base="$(rand_str 6)"
+            if ssl_have_le "$domain"; then :; else
+                warn "No Let's Encrypt certificate for '${domain:-<none>}' - 443 will use a self-signed cert (clients need allowInsecure)."
+                insecure=true
+            fi
+            paths="$(ssl_paths "$domain")"; cert="${paths% *}"; key="${paths#* }"
+            json="$(jq -n --arg tag "$tag" --argjson port "$port" --argjson pport "$plain_port" --arg host "$domain" \
+                --argjson insecure "$insecure" --arg cert "$cert" --arg key "$key" --arg b "$base" \
+                '{tag:$tag,type:"multi-ws",port:$port,plain_port:$pport,host:$host,tls:true,insecure:$insecure,cert:$cert,key:$key,
+                  pVless:("/"+$b+"-vless"),pVmess:("/"+$b+"-vmess"),pTrojan:("/"+$b+"-trojan"),pSs:("/"+$b+"-ss"),
+                  lVless:10801,lVmess:10802,lTrojan:10803,lSs:10804}')" ;;
         ss2022)
             json="$(jq -n --arg tag "$tag" --argjson port "$port" --arg k "$(openssl rand -base64 16)" \
                 '{tag:$tag,type:"ss2022",port:$port,serverKey:$k}')" ;;
@@ -188,16 +234,23 @@ xray_add_inbound() {
     esac
 
     inb_add "$json" || return 1
-    case "$type" in ss2022) fw_allow "$port" both ;; *) fw_allow "$port" tcp ;; esac
+    case "$type" in
+        ss2022) fw_allow "$port" both ;;
+        multi-ws) fw_allow "$port" tcp; fw_allow "$plain_port" tcp ;;
+        *) fw_allow "$port" tcp ;;
+    esac
     log_action "xray inbound added: $tag"
     xray_apply && ok "Protocol '$tag' enabled"
 }
 
 xray_del_inbound() {
     xray_inbound_exists "$1" || { err "Inbound '$1' not found."; return 1; }
-    local port; port="$(jq -r --arg t "$1" '.[]|select(.tag==$t)|.port' "$XRAY_INB")"
+    local port pport
+    port="$(jq -r --arg t "$1" '.[]|select(.tag==$t)|.port' "$XRAY_INB")"
+    pport="$(jq -r --arg t "$1" '.[]|select(.tag==$t)|.plain_port // empty' "$XRAY_INB")"
     jq --arg t "$1" 'map(select(.tag!=$t))' "$XRAY_INB" | json_write "$XRAY_INB" || return 1
     fw_deny "$port" both
+    [ -n "$pport" ] && fw_deny "$pport" both
     log_action "xray inbound removed: $1"
     xray_apply
 }
@@ -205,8 +258,9 @@ xray_del_inbound() {
 xray_list_inbounds() {
     if [ ! -s "$XRAY_INB" ] || [ "$(jq length "$XRAY_INB")" -eq 0 ]; then echo "No protocols configured."; return; fi
     printf "${BOLD}%-18s %-10s %-8s %s${NC}\n" "TAG" "TYPE" "PORT" "DETAILS"
-    jq -r '.[] | [.tag,.type,(.port|tostring),
-        (if .type=="reality" then "sni=\(.sni)"
+    jq -r '.[] | [.tag,.type,((.port|tostring) + (if .plain_port then "+\(.plain_port)" else "" end)),
+        (if .type=="multi-ws" then "VLESS/VMess/Trojan/SS over WS: TLS \(.port) + plain \(.plain_port)"
+         elif .type=="reality" then "sni=\(.sni)"
          elif .type=="trojan" then (if .host=="" then "self-signed" else .host end)
          elif .type=="ss2022" then "2022-blake3-aes-128-gcm"
          else "path=\(.path) " + (if .tls then "tls(\(.host))" else "plain" end) end)] | @tsv' "$XRAY_INB" |
@@ -249,6 +303,26 @@ xray_user_links() {
                 echo "vmess://$(b64 "$vm")" ;;
             trojan)
                 echo "trojan://$(urlenc "$pw")@${addr}:${port}?security=tls&sni=${host:-www.bing.com}&type=tcp${ins}#${rem}" ;;
+            multi-ws)
+                local pport pv pm pt ps sniq h2="${host:-$ip}"
+                pport="$(jq -r .plain_port <<<"$ib")"
+                pv="$(jq -r .pVless <<<"$ib")"; pm="$(jq -r .pVmess <<<"$ib")"
+                pt="$(jq -r .pTrojan <<<"$ib")"; ps="$(jq -r .pSs <<<"$ib")"
+                sniq="${host:+&sni=$host}"
+                local mode m_port m_sec m_tag
+                for mode in tls plain; do
+                    if [ "$mode" = tls ]; then m_port="$port"; m_sec="tls"; m_tag="tls"; else m_port="$pport"; m_sec="none"; m_tag="$pport"; fi
+                    local extra_q=""; [ "$mode" = tls ] && extra_q="${sniq}&fp=chrome${ins}"
+                    local hostq="${host:+&host=$host}"
+                    echo "vless://${uuid}@${h2}:${m_port}?encryption=none&security=${m_sec}&type=ws${hostq}&path=$(urlenc "$pv")${extra_q}#$(urlenc "${name}-vless-ws-${m_tag}")"
+                    local vm
+                    vm="$(jq -cn --arg ps "${name}-vmess-ws-${m_tag}" --arg add "$h2" --arg port "$m_port" --arg id "$uuid" \
+                        --arg host "$host" --arg path "$pm" --arg tls "$([ "$mode" = tls ] && echo tls)" \
+                        '{v:"2",ps:$ps,add:$add,port:$port,id:$id,aid:"0",scy:"auto",net:"ws",type:"none",host:$host,path:$path,tls:$tls,sni:$host,fp:"chrome"}')"
+                    echo "vmess://$(b64 "$vm")"
+                    echo "trojan://$(urlenc "$pw")@${h2}:${m_port}?security=${m_sec}&type=ws${hostq}&path=$(urlenc "$pt")${extra_q}#$(urlenc "${name}-trojan-ws-${m_tag}")"
+                    echo "ss://$(b64 "chacha20-ietf-poly1305:${pw}" | tr '+/' '-_' | tr -d '=')@${h2}:${m_port}?type=ws&security=${m_sec}${hostq}&path=$(urlenc "$ps")${extra_q}#$(urlenc "${name}-ss-ws-${m_tag}")"
+                done ;;
             ss2022)
                 echo "ss://2022-blake3-aes-128-gcm:$(urlenc "$(jq -r .serverKey <<<"$ib"):${ss}")@${ip}:${port}#${rem}" ;;
         esac
@@ -280,6 +354,7 @@ xray_show_usage() {
 
 xray_add_inbound_wizard() {
     menu_header "➕ Add Xray protocol"
+    echo "  6) ALL-IN-ONE WebSocket: VLESS + VMess + Trojan + Shadowsocks on 443 (SSL) and 80 (no SSL)"
     echo "  1) VLESS + Reality + Vision   (recommended, no domain needed)"
     echo "  2) VLESS + WebSocket          (CDN friendly, TLS optional)"
     echo "  3) VMess + WebSocket          (legacy clients, TLS optional)"
@@ -308,6 +383,11 @@ xray_add_inbound_wizard() {
            xray_add_inbound trojan "$port" "$domain" ;;
         5) port="$(ask_port "Shadowsocks" 8388)" || return
            xray_add_inbound ss2022 "$port" ;;
+        6) domain="$(ask "Domain for the 443 SSL port (empty = self-signed)" "$(setting_get domain)")"
+           if [ -n "$domain" ] && ! ssl_have_le "$domain"; then
+               confirm "Issue a Let's Encrypt certificate for $domain now?" y && ssl_issue "$domain"
+           fi
+           xray_add_inbound multi-ws 443 "$domain" 80 ;;
     esac
 }
 

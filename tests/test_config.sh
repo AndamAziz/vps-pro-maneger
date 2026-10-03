@@ -52,6 +52,25 @@ check "vmess link decodes"          'grep "^vmess://" <<<"$links" | sed "s#vmess
 check "trojan allowInsecure"        'grep -q "^trojan://.*allowInsecure=1" <<<"$links"'
 check "ss2022 link"                 'grep -q "^ss://2022-blake3-aes-128-gcm:" <<<"$links"'
 
+
+# --- all-in-one WebSocket (443 TLS + 80 plain, four protocols via fallbacks)
+echo '[]' > "$XRAY_INB"
+inb_add '{"tag":"multi-ws-443","type":"multi-ws","port":443,"plain_port":80,"host":"example.com","tls":true,"insecure":false,"cert":"/c.pem","key":"/k.pem","pVless":"/abc-vless","pVmess":"/abc-vmess","pTrojan":"/abc-trojan","pSs":"/abc-ss","lVless":10801,"lVmess":10802,"lTrojan":10803,"lSs":10804}'
+cfg="$(xray_build_config)"
+check "multi-ws: valid JSON"            'jq -e . <<<"$cfg" >/dev/null'
+check "multi-ws: api + 2 outer + 4 inner" '[ "$(jq ".inbounds|length" <<<"$cfg")" = 7 ]'
+check "multi-ws: 443 is TLS, 80 is plain" '[ "$(jq -r ".inbounds[]|select(.port==443)|.streamSettings.security" <<<"$cfg")" = tls ] && [ "$(jq -r ".inbounds[]|select(.port==80)|.streamSettings.security" <<<"$cfg")" = none ]'
+check "multi-ws: 4 path fallbacks"      '[ "$(jq ".inbounds[]|select(.port==443)|.settings.fallbacks|length" <<<"$cfg")" = 4 ]'
+check "multi-ws: fallback dest matches inner port" '[ "$(jq -r ".inbounds[]|select(.tag==\"multi-ws-443-trojan\")|.port" <<<"$cfg")" = "$(jq -r ".inbounds[]|select(.port==443)|.settings.fallbacks[]|select(.path==\"/abc-trojan\")|.dest" <<<"$cfg")" ]'
+check "multi-ws: inner inbounds are loopback WS" '[ "$(jq -r "[.inbounds[]|select(.tag|test(\"-(vless|vmess|trojan|ss)$\"))|select(.listen==\"127.0.0.1\" and .streamSettings.network==\"ws\")]|length" <<<"$cfg")" = 4 ]'
+check "multi-ws: both 443 and 80 conflict-checked" '! xray_add_inbound reality 443 >/dev/null 2>&1'
+links="$(xray_user_links alice)"
+check "multi-ws: 8 links (4 protocols x 2 ports)" '[ "$(wc -l <<<"$links")" = 8 ]'
+check "multi-ws: tls vless link"        'grep -q "^vless://.*@example.com:443?.*security=tls.*type=ws.*path=%2Fabc-vless" <<<"$links"'
+check "multi-ws: plain vless on 80"     'grep -q "^vless://.*@example.com:80?.*security=none.*type=ws" <<<"$links"'
+check "multi-ws: trojan ws link"        'grep -q "^trojan://.*@example.com:443?security=tls&type=ws" <<<"$links"'
+check "multi-ws: ss ws link"            'grep -q "^ss://[A-Za-z0-9_-]*@example.com:80?type=ws&security=none" <<<"$links"'
+
 # --- hysteria2 config
 HY2_BIN=/bin/true; HY2_DIR="$TMP/hy"; HY2_CONF="$HY2_DIR/config.yaml"; mkdir -p "$HY2_DIR"
 setting_set hy2_port 443; setting_set hy2_obfs secret
