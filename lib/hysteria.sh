@@ -66,6 +66,7 @@ hy2_apply() {
   cert: $HY2_DIR/server.crt
   key: $HY2_DIR/server.key"
     fi
+    local newconf; newconf="$(mktemp)"
     {
         echo "listen: :$port"
         echo "$tls_block"
@@ -83,7 +84,11 @@ hy2_apply() {
         echo "  proxy:"
         echo "    url: https://www.bing.com/"
         echo "    rewriteHost: true"
-    } > "$HY2_CONF"
+    } > "$newconf"
+    if [ -f "$HY2_CONF" ] && cmp -s "$newconf" "$HY2_CONF" && svc_active "$HY2_SVC"; then
+        rm -f "$newconf"; ok "Hysteria 2 configuration unchanged"; return 0
+    fi
+    cat "$newconf" > "$HY2_CONF"; rm -f "$newconf"
     chmod 640 "$HY2_CONF"; chown root:hysteria "$HY2_CONF" 2>/dev/null || true
     systemctl restart "$HY2_SVC" && ok "Hysteria 2 configuration applied" || { err "Hysteria failed to start (journalctl -u $HY2_SVC -n 30)"; return 1; }
 }

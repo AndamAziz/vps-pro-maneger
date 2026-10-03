@@ -20,6 +20,8 @@ jobs:
         run: bash tests/test_config.sh
       - name: Full-setup logic tests
         run: bash tests/test_full_setup.sh
+      - name: Self-update tests
+        run: bash tests/test_update.sh
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"

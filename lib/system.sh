@@ -259,8 +259,21 @@ sys_self_update() {
     require_root
     info "Checking for updates..."
     if [ -d "$VPSM_HOME/.git" ]; then
-        git -C "$VPSM_HOME" fetch -q origin && git -C "$VPSM_HOME" reset -q --hard "origin/$(git -C "$VPSM_HOME" rev-parse --abbrev-ref HEAD)" \
-            && ok "Updated to $(git -C "$VPSM_HOME" rev-parse --short HEAD)" || { err "git update failed"; return 1; }
+        local br
+        br="$(git -C "$VPSM_HOME" rev-parse --abbrev-ref HEAD 2>/dev/null)"
+        { [ -z "$br" ] || [ "$br" = HEAD ]; } && br=main
+        if ! git -C "$VPSM_HOME" fetch -q origin "+refs/heads/$br:refs/remotes/origin/$br" 2>/dev/null; then
+            # the branch we installed from may have been merged and deleted: follow main instead
+            if [ "$br" != main ] && git -C "$VPSM_HOME" fetch -q origin +refs/heads/main:refs/remotes/origin/main 2>/dev/null; then
+                warn "Branch '$br' no longer exists on GitHub - switching to main."
+                br=main
+            else
+                err "git update failed (is github.com reachable?)"; return 1
+            fi
+        fi
+        git -C "$VPSM_HOME" checkout -q -B "$br" "origin/$br" 2>/dev/null
+        git -C "$VPSM_HOME" reset -q --hard "origin/$br" || { err "git update failed"; return 1; }
+        ok "Updated to $(git -C "$VPSM_HOME" rev-parse --short HEAD) ($br)"
     else
         local tmp; tmp="$(mktemp -d)"
         curl -fsSL "https://github.com/${VPSM_REPO}/archive/refs/heads/main.tar.gz" | tar -xz -C "$tmp" --strip-components=1 \
@@ -268,9 +281,24 @@ sys_self_update() {
         rm -rf "$tmp"
     fi
     chmod +x "$VPSM_HOME/vpsmanager"
-    [ -f "$VPSM_HOME/bot/requirements.txt" ] && [ -d "$VPSM_HOME/venv" ] && "$VPSM_HOME/venv/bin/pip" install -q -r "$VPSM_HOME/bot/requirements.txt" 2>/dev/null
+    if [ -f "$VPSM_HOME/bot/requirements.txt" ] && [ -d "$VPSM_HOME/venv" ]; then
+        "$VPSM_HOME/venv/bin/pip" install -q -r "$VPSM_HOME/bot/requirements.txt" 2>/dev/null
+    fi
     svc_active vpsm-bot && systemctl restart vpsm-bot
     log_action "self-update"
+    # run the NEW code once so that fixes to generated configs take effect right away
+    "$VPSM_HOME/vpsmanager" post-update
+}
+
+# Re-generate configs that this tool owns with the (new) code. Idempotent: services are only
+# restarted when their generated config actually changed.
+sys_post_update() {
+    require_root
+    sys_tune_conntrack
+    xray_installed && xray_apply
+    squid_installed && [ -n "$(setting_get squid_port)" ] && squid_apply
+    hy2_installed && hy2_apply
+    return 0
 }
 
 #---- one-click ------------------------------------------------------------------------------

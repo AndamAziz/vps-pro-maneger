@@ -146,6 +146,9 @@ xray_apply() {
         rm -f "$tmp"; return 1
     fi
     mkdir -p "$(dirname "$XRAY_CONF")"
+    if [ -f "$XRAY_CONF" ] && cmp -s "$tmp" "$XRAY_CONF" && svc_active xray; then
+        rm -f "$tmp"; ok "Xray configuration unchanged"; return 0
+    fi
     install -m 640 "$tmp" "$XRAY_CONF"; rm -f "$tmp"
     systemctl enable xray >/dev/null 2>&1
     systemctl restart xray && ok "Xray configuration applied" || { err "Xray failed to start (journalctl -u xray -n 30)"; return 1; }

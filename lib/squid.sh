@@ -91,6 +91,10 @@ squid_apply() {
     local port="${1:-$(squid_port)}"
     cp "$SQUID_CONF" "$SQUID_CONF.prev" 2>/dev/null
     squid_write_config "$port"
+    if [ -f "$SQUID_CONF.prev" ] && cmp -s "$SQUID_CONF" "$SQUID_CONF.prev" && svc_active squid; then
+        setting_set squid_port "$port"; squid_fw_sync "$port"
+        ok "Squid configuration unchanged (TCP/$port)"; return 0
+    fi
     if squid -k parse >/dev/null 2>&1 && systemctl restart squid 2>/dev/null; then
         sleep 1
         if svc_active squid; then

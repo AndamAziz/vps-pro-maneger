@@ -179,6 +179,7 @@ cli() {
         backup)  sys_backup ;;
         restore) sys_restore "${1:-}" ;;
         update)  sys_self_update ;;
+        post-update) sys_post_update ;;
         version|-v|--version) echo "$VPSM_VERSION" ;;
         help|-h|--help) usage ;;
         *) usage; exit 1 ;;
