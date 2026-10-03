@@ -216,6 +216,7 @@ sys_status() {
     printf "  %-22s %s\n" "OpenVPN UDP"    "$(ovpn_state_line udp)"
     printf "  %-22s %s\n" "OpenVPN TCP"    "$(ovpn_state_line tcp)"
     printf "  %-22s %s\n" "Squid"          "$(svc_state squid)"
+    printf "  %-22s %s\n" "SSH over WebSocket" "$(svc_state vpsm-sshws)"
     printf "  %-22s %s\n" "BadVPN UDPGW"   "$(svc_state badvpn-udpgw)"
     printf "  %-22s %s\n" "Telegram bot"   "$(svc_state vpsm-bot)"
     printf "  %-22s %s\n" "Fail2ban"       "$(svc_state fail2ban)"
@@ -483,6 +484,7 @@ _f_hy2()    { hy2_installed && { ok "Hysteria 2 already installed"; return 0; };
 _f_wg()     { wg_installed && { ok "WireGuard already installed"; return 0; }; wg_install; }
 _f_ovpn()   { ovpn_inst udp >/dev/null && ovpn_inst tcp >/dev/null && { ok "OpenVPN UDP+TCP already installed"; return 0; }; ovpn_install; }
 _f_squid()  { squid_installed && { ok "Squid already installed"; squid_apply; return; }; squid_install 8080; }
+_f_sshws()  { sshws_installed && svc_active "$SSHWS_SVC" && { ok "SSH-WS already running"; return 0; }; sshws_install; }
 _f_udpgw()  { [ -x "$UDPGW_BIN" ] && svc_active "$UDPGW_SVC" && { ok "UDPGW already running"; return 0; }; udpgw_install 7300; }
 _f_user()   { user_exists "$FULL_USER" && { ok "user '$FULL_USER' already exists"; return 0; }; user_add "$FULL_USER" 0; }
 _f_apply()  { apply_all; }
@@ -518,6 +520,7 @@ full_setup() {
     run_step "OpenVPN"                               _f_ovpn
     run_step "Squid HTTP proxy (open)"                _f_squid
     run_step "BadVPN UDPGW"                           _f_udpgw
+    run_step "SSH over WebSocket (80/443, HTTP 101)"  _f_sshws
     run_step "Apply users to all protocols"           _f_apply
     run_step "Firewall (ufw)"                         fw_enable
 

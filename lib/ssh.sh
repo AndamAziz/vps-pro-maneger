@@ -6,6 +6,9 @@
 SSHD_CONF="/etc/ssh/sshd_config"
 UDPGW_BIN="/usr/local/bin/badvpn-udpgw"
 UDPGW_SVC="badvpn-udpgw"
+SSHWS_SVC="vpsm-sshws"
+SSHWS_UNIT_DIR="/etc/systemd/system"
+SSHWS_LOOP_PORT=10810
 
 ssh_service() { systemctl list-unit-files ssh.service >/dev/null 2>&1 && echo ssh || echo sshd; }
 
@@ -53,6 +56,7 @@ ssh_add_port() {
     # keep default 22 listening unless it was explicitly replaced
     fw_allow "$port" tcp
     ssh_reload && ok "SSH now listens on: $(ssh_current_ports)"
+    sshws_installed && sshws_write_unit && systemctl restart "$SSHWS_SVC" >/dev/null 2>&1
     log_action "ssh port: $port (replace=$replace)"
 }
 
@@ -164,6 +168,78 @@ EOF
     setting_set udpgw_port "$port"
 }
 
+#---- SSH over WebSocket (HTTP "101 Switching Protocols" payload tunnel) --------------
+
+sshws_installed() { [ -f "$SSHWS_UNIT_DIR/$SSHWS_SVC.service" ]; }
+
+# Xray's multi-ws inbound owns 80/443: SSH-WS then sits behind it on loopback as the default fallback
+sshws_behind_xray() { [ -s "$XRAY_INB" ] && jq -e 'any(.[]; .type=="multi-ws")' "$XRAY_INB" >/dev/null 2>&1; }
+
+sshws_write_unit() { # uses settings sshws_listen
+    local listen sshport
+    listen="$(setting_get sshws_listen)"; [ -n "$listen" ] || listen="127.0.0.1:$SSHWS_LOOP_PORT"
+    sshport="$(ssh_current_ports | awk '{print $1}')"
+    cp "$VPSM_HOME/systemd/vpsm-sshws.service" "$SSHWS_UNIT_DIR/$SSHWS_SVC.service" || return 1
+    sed -i "s#@HOME@#$VPSM_HOME#g;s#@LISTEN@#$listen#g;s#@SSHPORT@#$sshport#g" "$SSHWS_UNIT_DIR/$SSHWS_SVC.service"
+    systemctl daemon-reload
+}
+
+# sshws_install [PORT]   PORT only matters when Xray WS is not installed (default 80, public)
+# shellcheck disable=SC2120  # called with a port from the vpsmanager CLI
+sshws_install() {
+    require_root
+    local port="${1:-80}" listen
+    command -v python3 >/dev/null 2>&1 || pkg_install python3 || return 1
+    if sshws_behind_xray; then
+        listen="127.0.0.1:$SSHWS_LOOP_PORT"
+    else
+        valid_port "$port" || { err "Invalid port."; return 1; }
+        if ! sshws_installed && port_in_use "$port" tcp; then err "Port $port is already in use."; return 1; fi
+        listen="0.0.0.0:$port"
+    fi
+    setting_set sshws_listen "$listen"
+    sshws_write_unit || return 1
+    systemctl enable "$SSHWS_SVC" >/dev/null 2>&1; systemctl restart "$SSHWS_SVC" >/dev/null 2>&1
+    sleep 1
+    svc_active "$SSHWS_SVC" || { err "SSH-WS failed to start (journalctl -u $SSHWS_SVC -n 30)"; return 1; }
+    if sshws_behind_xray; then
+        setting_set sshws_port "$SSHWS_LOOP_PORT"
+        xray_apply || return 1
+        ok "SSH over WebSocket is active on the Xray ports: $(jq -r '[.[]|select(.type=="multi-ws")|"\(.plain_port) (no SSL)", "\(.port) (SSL)"]|join(", ")' "$XRAY_INB")"
+    else
+        fw_allow "$port" tcp
+        ok "SSH over WebSocket is active on TCP/$port"
+    fi
+    echo "  Payload example (any Host / path works):"
+    echo "    GET / HTTP/1.1[crlf]Host: $(sshws_host)[crlf]Upgrade: websocket[crlf]Connection: Upgrade[crlf][crlf]"
+    echo "  Use your SSH account (vpsmanager ssh add <name>) as the SSH user."
+    log_action "ssh-ws installed ($listen)"
+}
+
+sshws_host() { local h; h="$(jq -r '[.[]|select(.type=="multi-ws")|.host][0] // ""' "$XRAY_INB" 2>/dev/null)"; echo "${h:-$(get_public_ip)}"; }
+
+sshws_remove() {
+    systemctl disable --now "$SSHWS_SVC" >/dev/null 2>&1
+    rm -f "$SSHWS_UNIT_DIR/$SSHWS_SVC.service"; systemctl daemon-reload
+    setting_del sshws_listen; setting_del sshws_port
+    sshws_behind_xray && xray_apply
+    ok "SSH over WebSocket removed"
+}
+
+# Self-test: send the payload to the public ports and expect "101 Switching Protocols" + the SSH banner
+sshws_test() {
+    sshws_installed || { err "SSH-WS is not installed."; return 1; }
+    local ports p host out
+    host="$(sshws_host)"
+    if sshws_behind_xray; then ports="$(jq -r '.[]|select(.type=="multi-ws")|.plain_port' "$XRAY_INB" | head -1)"
+    else ports="$(setting_get sshws_listen | sed 's/.*://')"; fi
+    for p in $ports; do
+        out="$(timeout 5 bash -c 'exec 3<>/dev/tcp/127.0.0.1/$1; printf "GET / HTTP/1.1\r\nHost: $2\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\r\n" >&3; timeout 2 cat <&3' _ "$p" "$host" 2>/dev/null | tr -d '\r')"
+        if grep -q "101 Switching Protocols" <<<"$out" && grep -q "SSH-2.0" <<<"$out"; then ok "port $p: 101 Switching Protocols + SSH banner"
+        else err "port $p: unexpected answer: $(head -1 <<<"$out")"; fi
+    done
+}
+
 #---- menu -------------------------------------------------------------------------
 
 ssh_menu() {
@@ -175,9 +251,14 @@ ssh_menu() {
         echo "  4) Toggle password login     10) List tunnel accounts"
         echo "  5) Add public key            11) Install BadVPN UDPGW"
         echo "  6) Active sessions           12) Restart SSH"
+        echo "  13) Install / re-apply SSH over WebSocket (80/443)   [$(svc_state "$SSHWS_SVC")]"
+        echo "  14) Test SSH over WebSocket          15) Remove SSH over WebSocket"
         echo "  0) Back"
         echo -e "$LINE"
         case "$(ask "Choose" "")" in
+            13) sshws_install; pause ;;
+            14) sshws_test; pause ;;
+            15) sshws_remove; pause ;;
             1) ssh_add_port "$(ask "New SSH port" 2222)" yes; pause ;;
             2) ssh_add_port "$(ask "Extra SSH port" 2222)" no; pause ;;
             3) ssh_toggle_root; pause ;;

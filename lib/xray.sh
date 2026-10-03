@@ -52,12 +52,14 @@ xray_uninstall() {
 #---- config generation --------------------------------------------------------
 
 xray_build_config() {
-    local tmpu bt=true loglevel
+    local tmpu bt=true loglevel sshws
     [ "$(setting_get block_bittorrent)" = 0 ] && bt=false
     # 'error' keeps the journal quiet: scanners / stale clients hitting 80/443 would otherwise log a warning each
     loglevel="$(setting_get xray_loglevel)"; loglevel="${loglevel:-error}"
     tmpu="$(mktemp)"; users_active > "$tmpu"
-    jq -n --slurpfile ib "$XRAY_INB" --slurpfile us "$tmpu" \
+    # SSH-over-WebSocket proxy (loopback): catches every request that is not one of the proxy paths
+    sshws="$(setting_get sshws_port)"; sshws="${sshws:-0}"; [[ "$sshws" =~ ^[0-9]+$ ]] || sshws=0
+    jq -n --slurpfile ib "$XRAY_INB" --slurpfile us "$tmpu" --argjson sshws "$sshws" \
           --argjson bt "$bt" --argjson apiport "$XRAY_API_PORT" --arg ll "$loglevel" '
       ($us[0]) as $u | ($ib[0]) as $I |
       def sniff: {enabled:true, destOverride:["http","tls","quic"]};
@@ -90,7 +92,8 @@ xray_build_config() {
            sniffing:sniff}
         elif $i.type=="multi-ws" then
           ([{path:$i.pVless, dest:$i.lVless}, {path:$i.pVmess, dest:$i.lVmess},
-            {path:$i.pTrojan, dest:$i.lTrojan}, {path:$i.pSs, dest:$i.lSs}]) as $fb |
+            {path:$i.pTrojan, dest:$i.lTrojan}, {path:$i.pSs, dest:$i.lSs}]
+             + (if $sshws > 0 then [{dest:("127.0.0.1:" + ($sshws|tostring))}] else [] end)) as $fb |
           def outer($tag; $port; $stream):
             {tag:$tag, listen:"0.0.0.0", port:$port, protocol:"vless",
              settings:{clients:[$u[]|{id:.uuid, email:.name}], decryption:"none", fallbacks:$fb},
