@@ -308,11 +308,11 @@ full_setup() {
     run_step "Xray-core"                              _f_xray
     run_step "Xray: VLESS/VMess/Trojan/SS over WebSocket on 443 (SSL) + 80"  _f_ws
     run_step "Xray: VLESS + Reality on 8443"          _f_reality
-    run_step "Hysteria 2 (UDP 443)"                   _f_hy2
-    run_step "WireGuard (UDP 51820)"                  _f_wg
-    run_step "OpenVPN (UDP 1194)"                     _f_ovpn
-    run_step "Squid HTTP proxy (8080, open)"          _f_squid
-    run_step "BadVPN UDPGW (7300)"                    _f_udpgw
+    run_step "Hysteria 2"                             _f_hy2
+    run_step "WireGuard"                              _f_wg
+    run_step "OpenVPN"                               _f_ovpn
+    run_step "Squid HTTP proxy (open)"                _f_squid
+    run_step "BadVPN UDPGW"                           _f_udpgw
     run_step "Apply users to all protocols"           _f_apply
     run_step "Firewall (ufw)"                         fw_enable
 
