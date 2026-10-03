@@ -12,6 +12,7 @@ check() { if eval "$2"; then echo "ok   - $1"; else echo "FAIL - $1"; fail=1; fi
 
 OVPN_DIR="$TMP/server"; OVPN_PKI="$TMP/easy-rsa"; OVPN_CLIENTS="$TMP/clients"; SYSD="$TMP/systemd"; mkdir -p "$SYSD"
 # stubs
+require_root() { return 0; }
 pkg_install() { return 0; }
 make-cadir() { mkdir -p "$1"; }
 openvpn() { echo "KEY" > "${@: -1}"; }
