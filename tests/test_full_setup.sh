@@ -22,7 +22,7 @@ hy2_installed() { return 1; }; hy2_install() { rec "hy2:$*"; }
 wg_installed() { return 1; }; wg_install() { rec wg; [ -z "${FAIL_WG:-}" ]; }
 ovpn_installed() { return 1; }; ovpn_install() { rec ovpn; }
 squid_installed() { return 1; }; squid_install() { rec "squid:$1"; }
-udpgw_install() { rec "udpgw:$1"; }; apply_all() { rec apply; }; fw_enable() { rec ufw; }
+udpgw_install() { rec "udpgw:$1"; }; sshws_installed() { return 1; }; sshws_install() { rec sshws; }; apply_all() { rec apply; }; fw_enable() { rec ufw; }
 ssl_issue() { rec "ssl:$1"; return 1; }
 user_show() { rec "show:$1"; }; sys_ports() { :; }
 svc_active() { return 1; }; free() { echo "Mem: 838 0 0 0 0 0"; }; swapon() { :; }
@@ -30,8 +30,8 @@ svc_active() { return 1; }; free() { echo "Mem: 838 0 0 0 0 0"; }; swapon() { :;
 # 1) happy path
 CALLS=(); full_setup alice >/dev/null 2>&1; rc=$?
 check "full setup returns 0 when every step works" '[ $rc -eq 0 ]'
-check "step order: tune → fail2ban → xray → WS → reality → hy2 → wg → ovpn → squid → udpgw → firewall" \
-  '[ "$(printf "%s " "${CALLS[@]}" | grep -oE "tune|fail2ban|xray_install|xray_add:multi-ws|xray_add:reality|hy2|wg|ovpn|squid|udpgw|ufw" | tr "\n" " ")" = "tune fail2ban xray_install xray_add:multi-ws xray_add:reality hy2 wg ovpn squid udpgw ufw " ]'
+check "step order: tune → fail2ban → xray → WS → reality → hy2 → wg → ovpn → squid → udpgw → sshws → firewall" \
+  '[ "$(printf "%s " "${CALLS[@]}" | grep -oE "tune|fail2ban|xray_install|xray_add:multi-ws|xray_add:reality|hy2|wg|ovpn|squid|udpgw|sshws|ufw" | tr "\n" " ")" = "tune fail2ban xray_install xray_add:multi-ws xray_add:reality hy2 wg ovpn squid udpgw sshws ufw " ]'
 check "WS on 443 + plain 80"         'printf "%s\n" "${CALLS[@]}" | grep -qx "xray_add:multi-ws:443::80"'
 check "Reality on 8443"              'printf "%s\n" "${CALLS[@]}" | grep -qx "xray_add:reality:8443::www.microsoft.com"'
 check "Hysteria2 self-signed on 443" 'printf "%s\n" "${CALLS[@]}" | grep -qx "hy2:443 -"'

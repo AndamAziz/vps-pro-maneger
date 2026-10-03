@@ -55,6 +55,7 @@ vpsmanager watch 60                           # connect from your phone meanwhil
 vpsmanager diag                               # one-shot report (DNS, Xray, WireGuard handshakes, firewall) - paste it when asking for help
 vpsmanager fail2ban && vpsmanager tune        # SSH brute-force protection, conntrack/limits
 vpsmanager wg add phone               # prints config + QR
+vpsmanager ssh ws                    # SSH over WebSocket (HTTP 101 payload) on Xray ports 80/443
 vpsmanager ovpn add laptop            # → /etc/vps-manager/openvpn/laptop.ovpn
 vpsmanager ssh add bob 30 'pass' 2    # SSH account, 30 days, max 2 logins
 vpsmanager backup / restore FILE / update

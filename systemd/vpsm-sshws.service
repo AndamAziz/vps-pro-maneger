@@ -1,0 +1,16 @@
+[Unit]
+Description=VPS Manager Pro - SSH over WebSocket (HTTP upgrade) proxy
+After=network.target ssh.service
+
+[Service]
+ExecStart=/usr/bin/python3 @HOME@/ssh-ws/sshws.py --listen @LISTEN@ --ssh 127.0.0.1:@SSHPORT@
+Restart=always
+RestartSec=3
+User=nobody
+Group=nogroup
+NoNewPrivileges=true
+LimitNOFILE=65535
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+
+[Install]
+WantedBy=multi-user.target
