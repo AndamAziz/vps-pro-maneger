@@ -51,6 +51,8 @@ vpsmanager xray add ss2022 8388
 vpsmanager hy2 install [port] [domain|-]
 vpsmanager full-setup myuser vpn.example.com   # everything, unattended
 vpsmanager xray test                          # check every WS path on 443 and 80
+vpsmanager watch 60                           # connect from your phone meanwhile: which ports your traffic reaches, did Xray/WireGuard accept it
+vpsmanager diag                               # one-shot report (DNS, Xray, WireGuard handshakes, firewall) - paste it when asking for help
 vpsmanager fail2ban && vpsmanager tune        # SSH brute-force protection, conntrack/limits
 vpsmanager wg add phone               # prints config + QR
 vpsmanager ovpn add laptop            # → /etc/vps-manager/openvpn/laptop.ovpn

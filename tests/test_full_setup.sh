@@ -129,4 +129,13 @@ check "the recorder captured the firewall rules"          '[ "${#UFW[@]}" -gt 3 
 check "firewall does NOT open xray's random UDP ports"    '! printf "%s\n" "${UFW[@]}" | grep -qE "10299|10923|19809"'
 check "firewall still opens hysteria 666/udp + xray 443"  'printf "%s\n" "${UFW[@]}" | grep -qx "allow 666/udp" && printf "%s\n" "${UFW[@]}" | grep -qx "allow 443/tcp"'
 
+# 9) `watch` summary counts real packets only (tcpdump leaves an empty line when timeout stops it)
+printf '\n' > "$TMP/empty.cap"
+printf '01:11:50.655638 ens6  In  IP 92.40.219.136.1869 > 213.171.212.110.80: Flags [S], length 0\n01:11:50.656001 ens6  In  IP 92.40.219.136.1871 > 213.171.212.110.80: Flags [S], length 0\n01:11:51.100000 ens6  In  IP 198.51.100.7.5555 > 213.171.212.110.80: Flags [S], length 0\n\n' > "$TMP/real.cap"
+out="$(_watch_line "$TMP/empty.cap" "TCP 8443" | sed 's/\x1b\[[0-9;]*m//g')"
+check "an empty capture shows 0, not 1"                   'grep -Eq "TCP 8443 +0( |$)" <<<"$out"'
+out="$(_watch_line "$TMP/real.cap" "TCP 80" | sed 's/\x1b\[[0-9;]*m//g')"
+check "real packets are counted (3)"                      'grep -Eq "TCP 80 +3 " <<<"$out"'
+check "top sources are listed with their counts"          'grep -q "92.40.219.136 (2)" <<<"$out" && grep -q "198.51.100.7 (1)" <<<"$out"'
+
 [ $fail = 0 ] && echo "ALL FULL-SETUP TESTS PASSED" || { echo "SOME TESTS FAILED"; exit 1; }

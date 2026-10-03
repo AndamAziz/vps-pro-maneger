@@ -61,6 +61,78 @@ sys_ports() {
 
 # One-shot diagnostics for "X does not work" reports. Prints no private keys or passwords
 # (wg show lists public keys only; configs are not dumped).
+# watch_summary FILE LABEL  - "new connections / packets: N  from: ip (n), ..." for one tcpdump capture
+_watch_line() {
+    local file="$1" label="$2" n top pk
+    # keep real packet lines only: tcpdump prints an empty line when `timeout` stops it
+    pk="$(grep -E ' IP6? ' "$file" 2>/dev/null)"
+    n="$(printf '%s' "$pk" | grep -c .)"; n="${n:-0}"
+    top="$(printf '%s\n' "$pk" | awk 'NF {p=$5; sub(/\.[0-9]+$/,"",p); print p}' | sort | uniq -c | sort -rn | head -3 | awk '{printf "%s (%s)  ", $2, $1}')"
+    if [ "$n" -gt 0 ]; then printf "  %-26s ${GREEN}%4s${NC}   from: %s\n" "$label" "$n" "$top"
+    else printf "  %-26s ${RED}%4s${NC}\n" "$label" "$n"; fi
+}
+
+# sys_watch [seconds]  - connect from your phone/PC while this runs; it reports which ports receive your
+# traffic and whether Xray / WireGuard accept it. Xray's log level is raised temporarily and restored.
+sys_watch() {
+    require_root
+    local secs="${1:-45}" ip tmp wgport prev had_prev since acc rej ifc pk ts now
+    [[ "$secs" =~ ^[0-9]+$ ]] && [ "$secs" -ge 5 ] && [ "$secs" -le 300 ] || { err "Seconds must be 5-300."; return 1; }
+    need_cmd tcpdump || return 1
+    ip="$(get_public_ip)"; tmp="$(mktemp -d)"
+    wgport=""; command -v wg >/dev/null 2>&1 && wgport="$(wg_live_port 2>/dev/null)"
+    had_prev=0; prev="$(setting_get xray_loglevel)"; [ -n "$prev" ] && had_prev=1
+    if xray_installed; then setting_set xray_loglevel info; xray_apply >/dev/null 2>&1; fi
+    since="$(date '+%Y-%m-%d %H:%M:%S')"
+
+    echo -e "${BOLD}${YELLOW}▶ Connect NOW from your phone/PC with the VPN app (a web browser is not a VPN test).${NC}"
+    echo -e "  Watching ${secs}s on $ip ..."
+    local syn='tcp[tcpflags] & (tcp-syn|tcp-ack) = tcp-syn'
+    for pt in 80 443 8443 8080; do
+        timeout "$secs" tcpdump -nn -l -i any "tcp dst port $pt and dst host $ip and $syn" > "$tmp/tcp$pt" 2>/dev/null &
+    done
+    for pt in $wgport 666 1194; do
+        [ -n "$pt" ] && timeout "$secs" tcpdump -nn -l -i any "udp dst port $pt and dst host $ip" > "$tmp/udp$pt" 2>/dev/null &
+    done
+    wait
+
+    # restore the log level we changed
+    if xray_installed; then
+        if [ "$had_prev" = 1 ]; then setting_set xray_loglevel "$prev"; else setting_del xray_loglevel; fi
+        acc="$(journalctl -u xray --since "$since" --no-pager 2>/dev/null | grep -c ' accepted ')"
+        rej="$(journalctl -u xray --since "$since" --no-pager 2>/dev/null | grep -c 'failed to find the default')"
+        journalctl -u xray --since "$since" --no-pager 2>/dev/null | grep ' accepted ' > "$tmp/accepted"
+        xray_apply >/dev/null 2>&1
+    fi
+
+    echo -e "\n${BOLD}What reached this server${NC}  (new TCP connections / UDP packets)"
+    for pt in 80 443 8443 8080; do _watch_line "$tmp/tcp$pt" "TCP $pt"; done
+    for pt in $wgport 666 1194; do [ -n "$pt" ] && _watch_line "$tmp/udp$pt" "UDP $pt$([ "$pt" = "$wgport" ] && echo ' (WireGuard)')"; done
+
+    if xray_installed; then
+        echo -e "\n${BOLD}What Xray did${NC}"
+        echo "  accepted connections : ${acc:-0}"
+        [ -s "$tmp/accepted" ] && grep -o '\[[^]]*>>' "$tmp/accepted" | tr -d '[>' | sort | uniq -c | sort -rn | sed 's/^/      /'
+        echo "  rejected (wrong path): ${rej:-0}   (a web browser, scanner, or a client with the wrong path/Host)"
+    fi
+    if [ -n "$wgport" ]; then
+        echo -e "\n${BOLD}WireGuard peers${NC}"
+        now="$(date +%s)"
+        for ifc in $(wg show interfaces 2>/dev/null); do
+            while read -r pk ts; do
+                if [ "${ts:-0}" = 0 ]; then echo -e "  peer ${pk:0:10}…  handshake: ${RED}NEVER${NC}"
+                else echo -e "  peer ${pk:0:10}…  handshake: ${GREEN}$((now - ts))s ago${NC}"; fi
+            done < <(wg show "$ifc" latest-handshakes 2>/dev/null)
+        done
+    fi
+
+    echo -e "\n${BOLD}How to read this${NC}"
+    echo "  • a port shows 0            → your traffic never arrived: blocked BEFORE the server (your ISP / mobile network / the hosting panel's firewall), or you did not connect during the window"
+    echo "  • port > 0, Xray accepted 0 → it arrives but Xray refuses it: check that the app uses exactly the link's path, host/SNI and TLS on/off"
+    echo "  • UDP (WireGuard) > 0 but handshake NEVER → wrong keys / old QR code; re-scan a fresh one (vpsmanager wg add <name>)"
+    rm -rf "$tmp"
+}
+
 sys_diag() {
     local ip dom dns cm ct ifc
     ip="$(get_public_ip)"; dom="$(setting_get domain)"
