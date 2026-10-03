@@ -11,6 +11,14 @@ WG_NET="10.66.66"
 
 wg_installed() { [ -f "$WG_CONF" ]; }
 
+# An existing WireGuard (made by another tool, or moved to another port later) may differ from our own
+# settings, so always ask the running interface first.
+wg_live_port() {
+    local p; p="$(wg show "$WG_IF" listen-port 2>/dev/null)"
+    if [ -n "$p" ] && [ "$p" != 0 ]; then echo "$p"; else setting_get wg_port; fi
+}
+wg_server_pub() { wg show "$WG_IF" public-key 2>/dev/null || cat "$WG_CLIENTS/server.pub" 2>/dev/null; }
+
 wg_install() {
     require_root
     wg_installed && { warn "WireGuard is already configured."; return 0; }
@@ -57,10 +65,13 @@ wg_add_client() { # wg_add_client NAME
     local name="$1" ip priv pub psk port server_pub endpoint
     wg_installed || { err "WireGuard is not installed."; return 1; }
     valid_name "$name" || { err "Invalid name."; return 1; }
+    mkdir -p "$WG_CLIENTS"; chmod 700 "$WG_CLIENTS"
     [ -f "$WG_CLIENTS/$name.conf" ] && { err "Client '$name' already exists."; return 1; }
     ip="$(wg_next_ip)" || { err "Address pool exhausted."; return 1; }
     priv="$(wg genkey)"; pub="$(echo "$priv" | wg pubkey)"; psk="$(wg genpsk)"
-    port="$(setting_get wg_port)"; server_pub="$(cat "$WG_CLIENTS/server.pub")"
+    port="$(wg_live_port)"; server_pub="$(wg_server_pub)"
+    [ -n "$port" ] && [ -n "$server_pub" ] || { err "Cannot read the WireGuard port / public key (is $WG_IF up?)."; return 1; }
+    setting_set wg_port "$port"
     endpoint="$(get_public_ip):$port"
 
     cat >> "$WG_CONF" <<EOF

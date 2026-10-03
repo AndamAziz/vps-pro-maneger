@@ -24,6 +24,8 @@ jobs:
         run: bash tests/test_update.sh
       - name: Installer git-sync tests
         run: bash tests/test_installer_sync.sh
+      - name: WireGuard tests
+        run: bash tests/test_wireguard.sh
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
