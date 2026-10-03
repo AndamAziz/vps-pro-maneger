@@ -82,9 +82,28 @@ dbg() { wg_debug 5 2>&1 | sed 's/\x1b\[[0-9;]*m//g'; }
 IN=""; OUT=""; KLOG=""; out="$(dbg)"
 check "nothing arrived → says the tunnel may not have been switched on / wrong endpoint" 'grep -q "NO packet reached UDP 443" <<<"$out"'
 
+iptables-save() { printf ':INPUT DROP [100:9000]\n[5:300] -A ufw-user-input -p tcp -m tcp --dport 22 -j ACCEPT\n'; }   # readable, but no UDP 443 rule
 IN="$(for i in 1 2 3; do init_line; done)\n"; OUT=""; KLOG=""; out="$(dbg)"
 check "148-byte handshakes counted and recognised"                                'grep -q "handshake initiations (148 B)   : 3" <<<"$out" && grep -q "148 bytes x3" <<<"$out"'
-check "initiations arrived, nothing sent back → points at the firewall list, then keys"  'grep -q "sent NOTHING back" <<<"$out" && grep -q "firewall list above" <<<"$out" && grep -q "wg add" <<<"$out"'
+check "no allow rule for the port at all → says to allow it"                        'grep -q "NO firewall rule allows UDP 443" <<<"$out" && grep -q "ufw allow 443/udp" <<<"$out"'
+iptables-save() { :; }
+
+# firewall verdicts: the allow rule's counter decides between "firewall" and "keys"
+FWA=$'[3:400] -A ufw-user-input -p udp -m udp --dport 443 -j ACCEPT\n:INPUT DROP [100:9000]'
+fw_case() { # fw_case ALLOW_COUNT_AFTER
+    IN="$(for i in 1 2 3; do init_line; done)\n"; OUT=""; KLOG=""
+    printf '%s\n' "$FWA" > "$TMP/snapA"
+    printf '[%d:600] -A ufw-user-input -p udp -m udp --dport 443 -j ACCEPT\n:INPUT DROP [100:9000]\n' "$1" > "$TMP/snapB"
+    iptables-save() { if [ -e "$TMP/.second" ]; then cat "$TMP/snapB"; else cat "$TMP/snapA"; touch "$TMP/.second"; fi; }
+    rm -f "$TMP/.second"; dbg
+}
+out="$(fw_case 6)"
+check "allow rule counted all 3 (3→6) → firewall accepted them → KEY mismatch"      'grep -q "firewall ACCEPTED them" <<<"$out" && grep -q "KEY mismatch" <<<"$out" && grep -qE "^ +3 +-A ufw-user-input.*--dport 443" <<<"$out"'
+out="$(fw_case 3)"
+check "allow rule counted 0 (3→3) → something EARLIER drops them"                   'grep -q "something EARLIER in the firewall drops them" <<<"$out" && grep -qE "^ +0 +-A ufw-user-input.*--dport 443" <<<"$out"'
+iptables-save() { :; }
+IN="$(for i in 1 2 3; do init_line; done)\n"; OUT=""; KLOG=""; out="$(dbg)"
+check "unreadable firewall → says so instead of blaming the firewall or the keys"      'grep -q "could not read the firewall rules" <<<"$out" && ! grep -q "NO firewall rule allows" <<<"$out"'
 
 KLOG=$'kernel: wireguard: wg0: Invalid handshake initiation from 92.40.218.68:5000'; out="$(dbg)"
 check "kernel says Invalid → REJECTED, keys do not match"                         'grep -q "REJECTED" <<<"$out"'
