@@ -111,7 +111,7 @@ Usage: vpsmanager [command]
   user show <name> [--qr]         links (and QR codes) for a user
   user usage                      per-user traffic (Xray)
   xray add <reality|vless-ws|vmess-ws|trojan|ss2022> <port> [domain] [sni|path]
-  xray del <tag> | xray list | xray install | xray update
+  xray del <tag> | xray list | xray install | xray update | xray test
   hy2 install | wg add <name> | wg del <name> | ovpn add <name> | ovpn del <name>
   ssh add <name> [days] [password] [max-logins] | ssh del <name> | ssh list
   squid install [port] | restart | port <n> | test | ip <IP...|open>
@@ -153,6 +153,7 @@ cli() {
                 install) xray_install && xray_apply ;;
                 update)  xray_update ;;
                 apply)   xray_apply ;;
+                test)    xray_test ;;
                 *) usage; exit 1 ;;
             esac ;;
         hy2)  if [ "${1:-}" = install ]; then hy2_install; else usage; exit 1; fi ;;

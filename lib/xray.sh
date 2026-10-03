@@ -325,6 +325,11 @@ xray_user_links() {
                     echo "vmess://$(b64 "$vm")"
                     echo "trojan://$(urlenc "$pw")@${h2}:${m_port}?security=${m_sec}&type=ws${hostq}&path=$(urlenc "$pt")${extra_q}#$(urlenc "${name}-trojan-ws-${m_tag}")"
                     echo "ss://$(b64 "chacha20-ietf-poly1305:${pw}" | tr '+/' '-_' | tr -d '=')@${h2}:${m_port}?type=ws&security=${m_sec}${hostq}&path=$(urlenc "$ps")${extra_q}#$(urlenc "${name}-ss-ws-${m_tag}")"
+                    # same Shadowsocks endpoint in the older SIP003 "v2ray-plugin" form (Shadowrocket / NekoBox / older v2rayNG)
+                    local plug
+                    plug="mode=websocket;path=${ps}${host:+;host=$host}"
+                    [ "$mode" = tls ] && plug="${plug};tls"
+                    echo "ss://$(b64 "chacha20-ietf-poly1305:${pw}" | tr '+/' '-_' | tr -d '=')@${h2}:${m_port}/?plugin=$(urlenc "v2ray-plugin;${plug}")#$(urlenc "${name}-ss-plugin-${m_tag}")"
                 done ;;
             ss2022)
                 echo "ss://2022-blake3-aes-128-gcm:$(urlenc "$(jq -r .serverKey <<<"$ib"):${ss}")@${ip}:${port}#${rem}" ;;
@@ -394,6 +399,48 @@ xray_add_inbound_wizard() {
     esac
 }
 
+# Server-side self-test of the all-in-one WebSocket setup: does every path answer a WebSocket
+# upgrade (HTTP 101) on both the TLS and the plain port? Tells "server problem" from "client problem".
+xray_test() {
+    xray_installed || { err "Xray is not installed."; return 1; }
+    local ib host port pport name path code url proto ok=0 bad=0
+    local hdr
+    ib="$(jq -c '.[]|select(.type=="multi-ws")' "$XRAY_INB" 2>/dev/null | head -1)"
+    [ -n "$ib" ] || { err "No all-in-one WebSocket setup found. Add it from: Xray → Add protocol → 6"; return 1; }
+    if svc_active xray; then ok "xray service is running"; else err "xray service is NOT running (journalctl -u xray -n 30)"; return 1; fi
+    host="$(jq -r '.host // ""' <<<"$ib")"; port="$(jq -r .port <<<"$ib")"; pport="$(jq -r .plain_port <<<"$ib")"
+    for p in "$port" "$pport"; do
+        if port_in_use "$p" tcp; then ok "port $p is listening"; else err "nothing listens on TCP/$p"; fi
+    done
+    if [ -n "$host" ]; then
+        echo | openssl s_client -connect "127.0.0.1:$port" -servername "$host" 2>/dev/null | openssl x509 -noout -issuer -enddate 2>/dev/null \
+            | sed 's/^/    cert: /'
+    fi
+    hdr=(-H "Connection: Upgrade" -H "Upgrade: websocket" -H "Sec-WebSocket-Version: 13" -H "Sec-WebSocket-Key: dGVzdHRlc3R0ZXN0dGVzdA==")
+    local plain_extra=() tls_extra=() tmp i=0 label
+    tmp="$(mktemp -d)"
+    [ -n "$host" ] && { plain_extra=(-H "Host: $host"); tls_extra=(-H "Host: $host" --resolve "$host:$port:127.0.0.1"); }
+    # all 8 probes run in parallel (a successful upgrade keeps the socket open until the timeout)
+    for proto in vless:pVless vmess:pVmess trojan:pTrojan shadowsocks:pSs; do
+        name="${proto%%:*}"; path="$(jq -r ".${proto##*:}" <<<"$ib")"
+        i=$((i+1))
+        echo "$name  WS  :$pport (no SSL)  path $path" > "$tmp/$i.label"
+        ( curl -sk --noproxy '*' -m 3 -o /dev/null -w '%{http_code}' "${hdr[@]}" "${plain_extra[@]}" "http://127.0.0.1:${pport}${path}" > "$tmp/$i.code" 2>/dev/null ) &
+        i=$((i+1))
+        if [ -n "$host" ]; then url="https://$host:$port$path"; else url="https://127.0.0.1:$port$path"; fi
+        echo "$name  WS  :$port (SSL)     path $path" > "$tmp/$i.label"
+        ( curl -sk --noproxy '*' -m 3 -o /dev/null -w '%{http_code}' "${hdr[@]}" "${tls_extra[@]}" "$url" > "$tmp/$i.code" 2>/dev/null ) &
+    done
+    wait
+    for ((i=1; i<=8; i++)); do
+        code="$(cat "$tmp/$i.code" 2>/dev/null)"; label="$(cat "$tmp/$i.label")"
+        if [ "$code" = 101 ]; then ok "$label"; ok=$((ok+1)); else err "$label  → HTTP ${code:-000}"; bad=$((bad+1)); fi
+    done
+    rm -rf "$tmp"
+    echo -e "${DIM}101 = the path accepts WebSocket. If all pass but a client still fails, the problem is the client app / link format / DNS / provider firewall, not the server.${NC}"
+    [ "$bad" -eq 0 ]
+}
+
 xray_menu() {
     while true; do
         menu_header "🚀 Xray-core  (VLESS / VMess / Trojan / Shadowsocks)   [$(svc_state xray)]"
@@ -406,6 +453,7 @@ xray_menu() {
         echo "  7) Restart / apply config"
         echo "  8) View logs"
         echo "  9) Uninstall Xray"
+        echo " 10) Test WebSocket endpoints (443 / 80)"
         echo "  0) Back"
         echo -e "$LINE"
         case "$(ask "Choose" "")" in
@@ -418,6 +466,7 @@ xray_menu() {
             7) xray_apply; pause ;;
             8) journalctl -u xray -n 60 --no-pager; pause ;;
             9) confirm "Remove Xray completely?" n && xray_uninstall; pause ;;
+            10) xray_test; pause ;;
             0|"") return ;;
         esac
     done

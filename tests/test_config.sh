@@ -65,7 +65,8 @@ check "multi-ws: fallback dest matches inner port" '[ "$(jq -r ".inbounds[]|sele
 check "multi-ws: inner inbounds are loopback WS" '[ "$(jq -r "[.inbounds[]|select(.tag|test(\"-(vless|vmess|trojan|ss)$\"))|select(.listen==\"127.0.0.1\" and .streamSettings.network==\"ws\")]|length" <<<"$cfg")" = 4 ]'
 check "multi-ws: both 443 and 80 conflict-checked" '! xray_add_inbound reality 443 >/dev/null 2>&1'
 links="$(xray_user_links alice)"
-check "multi-ws: 8 links (4 protocols x 2 ports)" '[ "$(wc -l <<<"$links")" = 8 ]'
+check "multi-ws: 10 links (4 protocols x 2 ports + 2 SS plugin)" '[ "$(wc -l <<<"$links")" = 10 ]'
+check "multi-ws: SS v2ray-plugin link" 'grep -q "^ss://[A-Za-z0-9_-]*@example.com:443/?plugin=v2ray-plugin%3Bmode%3Dwebsocket%3Bpath%3D%2Fabc-ss%3Bhost%3Dexample.com%3Btls" <<<"$links"'
 check "multi-ws: tls vless link"        'grep -q "^vless://.*@example.com:443?.*security=tls.*type=ws.*path=%2Fabc-vless" <<<"$links"'
 check "multi-ws: plain vless on 80"     'grep -q "^vless://.*@example.com:80?.*security=none.*type=ws" <<<"$links"'
 check "multi-ws: trojan ws link"        'grep -q "^trojan://.*@example.com:443?security=tls&type=ws" <<<"$links"'
