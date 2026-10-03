@@ -17,6 +17,11 @@ sys_info() {
     echo -e "  Memory    : $mem"
     echo -e "  Disk (/)  : $disk"
     echo -e "  TCP CC    : $(sysctl -n net.ipv4.tcp_congestion_control 2>/dev/null)"
+    local ct cm
+    ct="$(cat /proc/sys/net/netfilter/nf_conntrack_count 2>/dev/null)"; cm="$(cat /proc/sys/net/netfilter/nf_conntrack_max 2>/dev/null)"
+    if [ -n "$ct" ] && [ -n "$cm" ]; then
+        echo -e "  Conntrack : $ct / $cm$([ $((ct * 100 / cm)) -ge 80 ] && echo -e "  ${RED}(almost full - run: vpsmanager tune)${NC}")"
+    fi
 }
 
 # List every listening port (TCP + UDP) with the owning process
@@ -69,6 +74,25 @@ EOF
     [ "$(sysctl -n net.ipv4.tcp_congestion_control)" = bbr ] && ok "BBR enabled" || warn "Kernel does not support BBR"
 }
 
+# Raise the connection-tracking table. The kernel default (often ~7k-65k) fills up on proxy
+# servers and then silently drops packets ("nf_conntrack: table full, dropping packet").
+sys_tune_conntrack() {
+    [ "$EUID" -eq 0 ] || return 0
+    modprobe nf_conntrack 2>/dev/null || return 0
+    echo nf_conntrack > /etc/modules-load.d/vpsm-conntrack.conf
+    echo 'options nf_conntrack hashsize=65536' > /etc/modprobe.d/vpsm-conntrack.conf
+    cat > /etc/sysctl.d/99-vpsm-conntrack.conf <<'CT'
+net.netfilter.nf_conntrack_max=262144
+net.netfilter.nf_conntrack_tcp_timeout_established=7200
+net.netfilter.nf_conntrack_tcp_timeout_time_wait=30
+net.netfilter.nf_conntrack_tcp_timeout_close_wait=30
+net.netfilter.nf_conntrack_tcp_timeout_fin_wait=30
+CT
+    [ -w /sys/module/nf_conntrack/parameters/hashsize ] && echo 65536 > /sys/module/nf_conntrack/parameters/hashsize 2>/dev/null
+    sysctl --system >/dev/null 2>&1
+    return 0
+}
+
 sys_tune() {
     require_root
     cat > /etc/sysctl.d/99-vpsm-tune.conf <<'EOF'
@@ -83,6 +107,7 @@ net.core.rmem_max=16777216
 net.core.wmem_max=16777216
 EOF
     sysctl --system >/dev/null 2>&1
+    sys_tune_conntrack
     cat > /etc/security/limits.d/99-vpsm.conf <<'EOF'
 * soft nofile 1048576
 * hard nofile 1048576

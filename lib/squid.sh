@@ -74,6 +74,7 @@ squid_install() { # squid_install [PORT]
     [ -n "$port" ] || port="$(ask_port "Squid proxy" 3128)" || return 1
     valid_port "$port" || { err "Invalid port."; return 1; }
     port_in_use "$port" tcp && { err "Port $port is already in use."; return 1; }
+    sys_tune_conntrack
     info "Installing Squid..."
     pkg_install squid || return 1
     systemctl enable squid >/dev/null 2>&1

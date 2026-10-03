@@ -116,6 +116,7 @@ Usage: vpsmanager [command]
   ssh add <name> [days] [password] [max-logins] | ssh del <name> | ssh list
   squid install [port] | restart | port <n> | test | ip <IP...|open>
   ports                           show every open (listening) port
+  tune                            kernel/network tuning (incl. conntrack table size)
   ssl issue <domain> [email] | ssl list | ssl renew
   expire                          apply expiry (runs daily from a systemd timer)
   backup | restore <file>         configuration backup / restore
@@ -167,6 +168,7 @@ cli() {
                    *) usage; exit 1 ;;
                esac ;;
         ports)   sys_ports ;;
+        tune)    sys_tune ;;
         ssl)     case "${1:-}" in issue) ssl_issue "${2:-}" "${3:-}" ;; list) ssl_list ;; renew) ssl_renew ;; *) usage; exit 1 ;; esac ;;
         expire)  users_expire ;;
         backup)  sys_backup ;;

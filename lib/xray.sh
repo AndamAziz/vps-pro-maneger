@@ -19,6 +19,7 @@ xray_require() {
 xray_install() {
     require_root
     need_cmd curl; need_cmd jq; need_cmd openssl
+    sys_tune_conntrack
     info "Installing Xray-core (official installer)..."
     local script
     script="$(curl -fsSL "$XRAY_INSTALL_URL")" || { err "Cannot download the Xray installer."; return 1; }
