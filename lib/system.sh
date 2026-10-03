@@ -61,15 +61,20 @@ sys_ports() {
 
 # One-shot diagnostics for "X does not work" reports. Prints no private keys or passwords
 # (wg show lists public keys only; configs are not dumped).
-# watch_summary FILE LABEL  - "new connections / packets: N  from: ip (n), ..." for one tcpdump capture
-_watch_line() {
-    local file="$1" label="$2" n top pk
-    # keep real packet lines only: tcpdump prints an empty line when `timeout` stops it
-    pk="$(grep -E ' IP6? ' "$file" 2>/dev/null)"
-    n="$(printf '%s' "$pk" | grep -c .)"; n="${n:-0}"
-    top="$(printf '%s\n' "$pk" | awk 'NF {p=$5; sub(/\.[0-9]+$/,"",p); print p}' | sort | uniq -c | sort -rn | head -3 | awk '{printf "%s (%s)  ", $2, $1}')"
-    if [ "$n" -gt 0 ]; then printf "  %-26s ${GREEN}%4s${NC}   from: %s\n" "$label" "$n" "$top"
-    else printf "  %-26s ${RED}%4s${NC}\n" "$label" "$n"; fi
+# real packet lines in a tcpdump capture (tcpdump prints an empty line when `timeout` stops it)
+_cap_count() { grep -cE ' IP6? ' "$1" 2>/dev/null || true; }
+
+# _watch_row LABEL ARRIVED_FILE ANSWERED_FILE
+# arrived  = packets/SYNs that reached the NIC (seen BEFORE the firewall)
+# answered = what this server sent back (SYN-ACK / UDP reply): means the firewall let it in AND something listens
+_watch_row() {
+    local label="$1" af="$2" rf="$3" na nr top ca cr
+    na="$(_cap_count "$af")"; nr="$(_cap_count "$rf")"; na="${na:-0}"; nr="${nr:-0}"
+    top="$(grep -E ' IP6? ' "$af" 2>/dev/null | awk '{p=$5; sub(/\.[0-9]+$/,"",p); print p}' | sort | uniq -c | sort -rn | head -3 | awk '{printf "%s (%s)  ", $2, $1}')"
+    ca="$RED"; [ "$na" -gt 0 ] && ca="$GREEN"
+    cr="$RED"; [ "$nr" -gt 0 ] && cr="$GREEN"
+    [ "$na" -gt 0 ] && [ "$nr" -eq 0 ] && cr="$YELLOW"
+    printf "  %-22s arrived ${ca}%6s${NC}   answered ${cr}%6s${NC}   %s\n" "$label" "$na" "$nr" "${top:+from: $top}"
 }
 
 # sys_watch [seconds]  - connect from your phone/PC while this runs; it reports which ports receive your
@@ -87,12 +92,20 @@ sys_watch() {
 
     echo -e "${BOLD}${YELLOW}▶ Connect NOW from your phone/PC with the VPN app (a web browser is not a VPN test).${NC}"
     echo -e "  Watching ${secs}s on $ip ..."
-    local syn='tcp[tcpflags] & (tcp-syn|tcp-ack) = tcp-syn'
+    local syn='tcp[tcpflags] & (tcp-syn|tcp-ack) = tcp-syn' synack='tcp[tcpflags] & (tcp-syn|tcp-ack) = (tcp-syn|tcp-ack)'
     for pt in 80 443 8443 8080; do
         timeout "$secs" tcpdump -nn -l -i any "tcp dst port $pt and dst host $ip and $syn" > "$tmp/tcp$pt" 2>/dev/null &
+        timeout "$secs" tcpdump -nn -l -i any "tcp src port $pt and src host $ip and $synack" > "$tmp/tcpA$pt" 2>/dev/null &
     done
     for pt in $wgport 666 1194; do
-        [ -n "$pt" ] && timeout "$secs" tcpdump -nn -l -i any "udp dst port $pt and dst host $ip" > "$tmp/udp$pt" 2>/dev/null &
+        [ -n "$pt" ] || continue
+        timeout "$secs" tcpdump -nn -l -i any "udp dst port $pt and dst host $ip" > "$tmp/udp$pt" 2>/dev/null &
+        timeout "$secs" tcpdump -nn -l -i any "udp src port $pt and src host $ip" > "$tmp/udpA$pt" 2>/dev/null &
+    done
+    local left="$secs"
+    while [ "$left" -gt 0 ]; do
+        sleep $(( left > 15 ? 15 : left )); left=$(( left > 15 ? left - 15 : 0 ))
+        [ "$left" -gt 0 ] && echo "  ... ${left}s left"
     done
     wait
 
@@ -105,9 +118,9 @@ sys_watch() {
         xray_apply >/dev/null 2>&1
     fi
 
-    echo -e "\n${BOLD}What reached this server${NC}  (new TCP connections / UDP packets)"
-    for pt in 80 443 8443 8080; do _watch_line "$tmp/tcp$pt" "TCP $pt"; done
-    for pt in $wgport 666 1194; do [ -n "$pt" ] && _watch_line "$tmp/udp$pt" "UDP $pt$([ "$pt" = "$wgport" ] && echo ' (WireGuard)')"; done
+    echo -e "\n${BOLD}What reached this server${NC}  (arrived = seen on the network card; answered = this server replied, i.e. the firewall allowed it and something listens)"
+    for pt in 80 443 8443 8080; do _watch_row "TCP $pt" "$tmp/tcp$pt" "$tmp/tcpA$pt"; done
+    for pt in $wgport 666 1194; do [ -n "$pt" ] && _watch_row "UDP $pt$([ "$pt" = "$wgport" ] && echo ' (WireGuard)')" "$tmp/udp$pt" "$tmp/udpA$pt"; done
 
     if xray_installed; then
         echo -e "\n${BOLD}What Xray did${NC}"
@@ -127,7 +140,9 @@ sys_watch() {
     fi
 
     echo -e "\n${BOLD}How to read this${NC}"
-    echo "  • a port shows 0            → your traffic never arrived: blocked BEFORE the server (your ISP / mobile network / the hosting panel's firewall), or you did not connect during the window"
+    echo "  • arrived 0                 → your traffic never reached the server: blocked BEFORE it (ISP / mobile network / hosting panel firewall), or you did not connect during the window"
+    echo "  • arrived > 0, answered 0   → it reached the server but was dropped by the firewall (ufw) or nothing listens (expected for scanners, and for Squid when it is restricted to your IPs)"
+    echo "  • answered > 0              → the server accepted the connection"
     echo "  • port > 0, Xray accepted 0 → it arrives but Xray refuses it: check that the app uses exactly the link's path, host/SNI and TLS on/off"
     echo "  • UDP (WireGuard) > 0 but handshake NEVER → wrong keys / old QR code; re-scan a fresh one (vpsmanager wg add <name>)"
     rm -rf "$tmp"
