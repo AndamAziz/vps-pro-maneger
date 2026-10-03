@@ -118,6 +118,7 @@ Usage: vpsmanager [command]
   ssh add <name> [days] [password] [max-logins] | ssh del <name> | ssh list
   squid install [port] | restart | port <n> | test | ip <IP...|open>
   ports                           show every open (listening) port
+  diag                            one-shot diagnostics (DNS, Xray 80/443, WireGuard, firewall) - paste it when asking for help
   tune                            kernel/network tuning (incl. conntrack table size)
   fail2ban                        install Fail2ban (ban SSH brute-force after 5 failures)
   ssl issue <domain> [email] | ssl list | ssl renew
@@ -172,6 +173,7 @@ cli() {
                    *) usage; exit 1 ;;
                esac ;;
         ports)   sys_ports ;;
+        diag)    sys_diag ;;
         tune)    sys_tune ;;
         fail2ban) sys_fail2ban ;;
         ssl)     case "${1:-}" in issue) ssl_issue "${2:-}" "${3:-}" ;; list) ssl_list ;; renew) ssl_renew ;; *) usage; exit 1 ;; esac ;;
