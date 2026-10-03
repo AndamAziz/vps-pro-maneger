@@ -60,17 +60,22 @@ apt-get install -y -qq curl ca-certificates jq openssl qrencode git tar iproute2
     || fail "Could not install base packages (check your network / apt sources)."
 
 step "Fetching VPS Manager Pro ($REPO@$BRANCH)..."
+GIT_URL="${VPSM_GIT_URL:-https://github.com/$REPO.git}"
+# >>> git-sync
 if [ -d "$HOME_DIR/.git" ]; then
-    git -C "$HOME_DIR" fetch -q origin "$BRANCH" || fail "Update failed: could not fetch $BRANCH from GitHub."
-    git -C "$HOME_DIR" checkout -q -B "$BRANCH" "origin/$BRANCH" 2>/dev/null || true
+    # explicit refspec: an existing single-branch clone (installed with --branch X) has no origin/$BRANCH ref
+    git -C "$HOME_DIR" fetch -q origin "+refs/heads/$BRANCH:refs/remotes/origin/$BRANCH" \
+        || fail "Update failed: could not fetch $BRANCH from GitHub."
+    git -C "$HOME_DIR" checkout -q -B "$BRANCH" "origin/$BRANCH" || fail "Update failed: could not switch to $BRANCH."
     git -C "$HOME_DIR" reset -q --hard "origin/$BRANCH" || fail "Update failed."
-elif git clone -q --depth 1 -b "$BRANCH" "https://github.com/$REPO.git" "$HOME_DIR.new" 2>/dev/null; then
+elif git clone -q --depth 1 -b "$BRANCH" "$GIT_URL" "$HOME_DIR.new" 2>/dev/null; then
     rm -rf "$HOME_DIR"; mv "$HOME_DIR.new" "$HOME_DIR"
 else
     rm -rf "$HOME_DIR.new"; mkdir -p "$HOME_DIR"
     curl -fsSL "https://github.com/$REPO/archive/refs/heads/$BRANCH.tar.gz" | tar -xz -C "$HOME_DIR" --strip-components=1 \
         || fail "Download failed. Check that github.com is reachable."
 fi
+# <<< git-sync
 
 chmod +x "$HOME_DIR/vpsmanager"
 ln -sf "$HOME_DIR/vpsmanager" /usr/local/bin/vpsmanager
