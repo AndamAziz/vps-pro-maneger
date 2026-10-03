@@ -66,6 +66,7 @@ squid_apply() {
     return 1
 }
 
+# shellcheck disable=SC2120  # called with an argument from the vpsmanager CLI
 squid_install() { # squid_install [PORT]
     require_root
     squid_installed && { warn "Squid is already installed - applying the latest configuration."; squid_apply; return; }
@@ -81,6 +82,7 @@ squid_install() { # squid_install [PORT]
     log_action "squid installed on $port"
 }
 
+# shellcheck disable=SC2120
 squid_change_port() { # squid_change_port [PORT]
     squid_installed || { err "Squid is not installed."; return 1; }
     local old new="${1:-}"
