@@ -19,6 +19,30 @@ sys_info() {
     echo -e "  TCP CC    : $(sysctl -n net.ipv4.tcp_congestion_control 2>/dev/null)"
 }
 
+# List every listening port (TCP + UDP) with the owning process
+sys_ports() {
+    local rows
+    rows="$(ss -H -lntup 2>/dev/null | awk '{
+        proto=$1; n=split($5, a, ":"); port=a[n]; addr=$5; sub(":" port "$", "", addr);
+        proc="-"; if (match($0, /users:\(\("[^"]+"/)) { proc=substr($0, RSTART+9, RLENGTH-10) }
+        scope=(addr ~ /^(127\.|\[::1\])/) ? "local-only" : "public";
+        print proto "\t" port "\t" proc "\t" scope }' | sort -t$'\t' -k1,1 -k2,2n -u)"
+    [ -n "$rows" ] || { echo "No listening ports found."; return; }
+    printf "${BOLD}%-6s %-8s %-18s %s${NC}\n" "PROTO" "PORT" "PROCESS" "ACCESS"
+    while IFS=$'\t' read -r proto port proc scope; do
+        local col="$GREEN"; [ "$scope" = local-only ] && col="$DIM"
+        printf "%-6s %-8s %-18s ${col}%s${NC}\n" "$proto" "$port" "$proc" "$scope"
+    done <<<"$rows"
+    echo ""
+    echo -e "Open to the internet: ${BOLD}$(awk -F'\t' '$4=="public" && $1=="tcp"' <<<"$rows" | wc -l) TCP${NC} + ${BOLD}$(awk -F'\t' '$4=="public" && $1=="udp"' <<<"$rows" | wc -l) UDP${NC} port(s)"
+    if fw_active; then
+        echo -e "Firewall (ufw): ${GREEN}active${NC} - allowed rules:"
+        ufw status | awk '/ALLOW/ && !/\(v6\)/ {print "   " $1}' | sort -un | tr '\n' ' '; echo
+    else
+        echo -e "Firewall (ufw): ${YELLOW}inactive${NC} - every listening public port is reachable (unless your hosting provider blocks it)."
+    fi
+}
+
 sys_status() {
     echo -e "${BOLD}Services${NC}"
     printf "  %-22s %s\n" "SSH"            "$(svc_state "$(ssh_service)")"
@@ -209,6 +233,7 @@ system_menu() {
     while true; do
         menu_header "⚙️  System"
         echo "  1) Server info & service status    7) Update OS packages"
+        echo "  13) Show open ports"
         echo "  2) Enable BBR                      8) Clean up"
         echo "  3) Tune network / limits           9) Backup configuration"
         echo "  4) Firewall (ufw)                 10) Restore backup"
@@ -229,6 +254,7 @@ system_menu() {
             10) ls -1t "$VPSM_BACKUP_DIR"/*.tar.gz 2>/dev/null; sys_restore "$(ask "Backup file path" "")"; pause ;;
             11) sys_self_update; pause ;;
             12) confirm "Reboot now?" n && reboot ;;
+            13) sys_ports; pause ;;
             0|"") return ;;
         esac
     done

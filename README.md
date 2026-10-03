@@ -28,7 +28,7 @@ Then open the menu any time with `vpsmanager` (or `menu`). Re-running the instal
 | **WireGuard** | Server setup, clients with preshared keys, config file + QR, live add/remove |
 | **OpenVPN** | easy-rsa 3 (ECDSA), tls-crypt, AES-256-GCM, UDP/TCP, `.ovpn` profiles, revocation |
 | **SSH** | Change/add port, root & password-login toggles, keys, expiring tunnel accounts, max-logins, BadVPN UDPGW |
-| **Squid** | Authenticated HTTP/HTTPS proxy, user management |
+| **Squid** | Open HTTP/HTTPS proxy (no username/password): install, restart, change port, show open ports, self-test, optional IP restriction |
 | **SSL** | Let's Encrypt (certbot) with auto-renew hook, self-signed fallback |
 | **System** | BBR, kernel tuning, ufw (auto-opens installed ports), Fail2ban, swap, OS update, backup/restore, self-update |
 | **Telegram bot** | `/add /del /renew /links /usage /status /backup /wg /ovpn /ssh`, plus yt-dlp video downloader — admin-only |

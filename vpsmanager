@@ -114,8 +114,8 @@ Usage: vpsmanager [command]
   xray del <tag> | xray list | xray install | xray update
   hy2 install | wg add <name> | wg del <name> | ovpn add <name> | ovpn del <name>
   ssh add <name> [days] [password] [max-logins] | ssh del <name> | ssh list
-  squid add <name> [password] | squid del <name>
-  squid mode open | squid mode ip <IP...> | squid mode auth
+  squid install [port] | restart | port <n> | test | ip <IP...|open>
+  ports                           show every open (listening) port
   expire                          apply expiry (runs daily from a systemd timer)
   backup | restore <file>         configuration backup / restore
   update                          update VPS Manager itself
@@ -157,7 +157,15 @@ cli() {
         wg)   case "${1:-}" in add) wg_add_client "$2" && wg_show_client "$2" ;; del) wg_del_client "$2" ;; install) wg_install ;; *) usage; exit 1 ;; esac ;;
         ovpn) case "${1:-}" in add) ovpn_add_client "$2" ;; del) ovpn_del_client "$2" ;; install) ovpn_install ;; *) usage; exit 1 ;; esac ;;
         ssh)  case "${1:-}" in add) shift; ssh_user_add "$@" ;; del) ssh_user_del "$2" ;; list) ssh_user_list ;; *) usage; exit 1 ;; esac ;;
-        squid) case "${1:-}" in mode) shift; squid_set_mode "$@" ;; add) squid_add_user "$2" "${3:-}" ;; del) squid_del_user "$2" ;; install) squid_install ;; *) usage; exit 1 ;; esac ;;
+        squid) case "${1:-}" in
+                   install) squid_install "${2:-}" ;;
+                   restart|apply) squid_apply ;;
+                   port) squid_change_port "${2:-}" ;;
+                   ip) shift; squid_set_ips "$@" ;;
+                   test) squid_test ;;
+                   *) usage; exit 1 ;;
+               esac ;;
+        ports)   sys_ports ;;
         expire)  users_expire ;;
         backup)  sys_backup ;;
         restore) sys_restore "${1:-}" ;;
