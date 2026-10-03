@@ -22,6 +22,8 @@ jobs:
         run: bash tests/test_full_setup.sh
       - name: Self-update tests
         run: bash tests/test_update.sh
+      - name: Installer git-sync tests
+        run: bash tests/test_installer_sync.sh
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
