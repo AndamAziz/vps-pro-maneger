@@ -181,6 +181,27 @@ class BotTests(unittest.TestCase):
         self.assertTrue(any(isinstance(h, CallbackQueryHandler) for h in added))
         self.assertGreaterEqual(len(added), 16)
 
+    def test_downloader_uses_the_venv_python_not_PATH(self):
+        seen = []
+
+        async def fake_exec(*cmd, **kw):
+            seen.append(cmd)
+            raise FileNotFoundError("nope")
+        u = make_update(text="https://example.com/v")
+        note = SimpleNamespace(edit_text=AsyncMock())
+        u.effective_message.reply_text = AsyncMock(return_value=note)
+        old, bot.asyncio.create_subprocess_exec = bot.asyncio.create_subprocess_exec, fake_exec
+        try:
+            run(bot.download(u, make_ctx()))
+        finally:
+            bot.asyncio.create_subprocess_exec = old
+        self.assertEqual(seen[0][:3], (sys.executable, "-m", "yt_dlp"))
+        self.assertIn("Cannot start the downloader", note.edit_text.await_args.args[0])   # no crash, clear message
+
+    def test_bot_token_never_logged(self):
+        import logging
+        self.assertGreaterEqual(logging.getLogger("httpx").level, logging.WARNING)
+
     def test_free_text_shows_menu(self):
         u = make_update(text="hello")
         run(bot.on_text(u, make_ctx()))
