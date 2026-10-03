@@ -213,7 +213,8 @@ sys_status() {
     printf "  %-22s %s\n" "Xray"           "$(svc_state xray)"
     printf "  %-22s %s\n" "Hysteria 2"     "$(svc_state hysteria-server)"
     printf "  %-22s %s\n" "WireGuard"      "$(svc_state wg-quick@wg0)"
-    printf "  %-22s %s\n" "OpenVPN"        "$(svc_state openvpn-server@server)"
+    printf "  %-22s %s\n" "OpenVPN UDP"    "$(ovpn_state_line udp)"
+    printf "  %-22s %s\n" "OpenVPN TCP"    "$(ovpn_state_line tcp)"
     printf "  %-22s %s\n" "Squid"          "$(svc_state squid)"
     printf "  %-22s %s\n" "BadVPN UDPGW"   "$(svc_state badvpn-udpgw)"
     printf "  %-22s %s\n" "Telegram bot"   "$(svc_state vpsm-bot)"
@@ -300,7 +301,7 @@ fw_enable() {
             if [ "$type" = ss2022 ]; then ufw allow "$port" >/dev/null 2>&1; else ufw allow "$port/tcp" >/dev/null 2>&1; fi
         done < <(jq -r '.[] | . as $i | [$i.port, ($i.plain_port // empty)] | .[] | "\(.) \($i.type)"' "$XRAY_INB")
     fi
-    for kv in hy2_port:udp wg_port:udp ovpn_port:"$(setting_get ovpn_proto)" squid_port:tcp; do
+    for kv in hy2_port:udp wg_port:udp ovpn_udp_port:udp ovpn_tcp_port:tcp squid_port:tcp; do
         p="$(setting_get "${kv%%:*}")"; [ -n "$p" ] && ufw allow "$p/${kv#*:}" >/dev/null 2>&1
     done
     ufw allow 80/tcp >/dev/null 2>&1
@@ -413,7 +414,7 @@ sys_restore() { # sys_restore FILE
     require_root
     [ -f "$1" ] || { err "File not found: $1"; return 1; }
     confirm "Restoring overwrites current configuration. Continue?" n || return 1
-    tar -xzf "$1" -C / && ok "Restored. Re-applying configs..." && { apply_all; systemctl restart wg-quick@wg0 openvpn-server@server squid 2>/dev/null; true; }
+    tar -xzf "$1" -C / && ok "Restored. Re-applying configs..." && { apply_all; local _ov; mapfile -t _ov < <(ovpn_svcs); systemctl restart wg-quick@wg0 "${_ov[@]}" squid 2>/dev/null; true; }
 }
 
 sys_self_update() {
@@ -480,7 +481,7 @@ _f_ws()     { xray_inbound_exists multi-ws-443 || xray_add_inbound multi-ws 443 
 _f_reality(){ xray_inbound_exists reality-8443 || xray_add_inbound reality 8443 "" "www.microsoft.com"; }
 _f_hy2()    { hy2_installed && { ok "Hysteria 2 already installed"; return 0; }; hy2_install 443 -; }
 _f_wg()     { wg_installed && { ok "WireGuard already installed"; return 0; }; wg_install; }
-_f_ovpn()   { ovpn_installed && { ok "OpenVPN already installed"; return 0; }; ovpn_install; }
+_f_ovpn()   { ovpn_inst udp >/dev/null && ovpn_inst tcp >/dev/null && { ok "OpenVPN UDP+TCP already installed"; return 0; }; ovpn_install; }
 _f_squid()  { squid_installed && { ok "Squid already installed"; squid_apply; return; }; squid_install 8080; }
 _f_udpgw()  { [ -x "$UDPGW_BIN" ] && svc_active "$UDPGW_SVC" && { ok "UDPGW already running"; return 0; }; udpgw_install 7300; }
 _f_user()   { user_exists "$FULL_USER" && { ok "user '$FULL_USER' already exists"; return 0; }; user_add "$FULL_USER" 0; }
