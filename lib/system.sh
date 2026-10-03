@@ -61,15 +61,24 @@ sys_ports() {
 
 # One-shot diagnostics for "X does not work" reports. Prints no private keys or passwords
 # (wg show lists public keys only; configs are not dumped).
-# real packet lines in a tcpdump capture (tcpdump prints an empty line when `timeout` stops it)
-_cap_count() { grep -cE ' IP6? ' "$1" 2>/dev/null || true; }
+# _cap_count FILE [flows]
+# Without "flows": number of real packet lines (tcpdump prints an empty line when `timeout` stops it).
+# With "flows": number of distinct connections (source -> destination pairs). A client that never completes
+# the TCP handshake makes the server retransmit its SYN-ACK ~5 times, which would otherwise count 6x.
+_cap_count() {
+    if [ "${2:-}" = flows ]; then
+        grep -E ' IP6? ' "$1" 2>/dev/null | awk '{print $5, $7}' | sort -u | grep -c . || true
+    else
+        grep -cE ' IP6? ' "$1" 2>/dev/null || true
+    fi
+}
 
 # _watch_row LABEL ARRIVED_FILE ANSWERED_FILE
 # arrived  = packets/SYNs that reached the NIC (seen BEFORE the firewall)
 # answered = what this server sent back (SYN-ACK / UDP reply): means the firewall let it in AND something listens
 _watch_row() {
-    local label="$1" af="$2" rf="$3" na nr top ca cr
-    na="$(_cap_count "$af")"; nr="$(_cap_count "$rf")"; na="${na:-0}"; nr="${nr:-0}"
+    local label="$1" af="$2" rf="$3" mode="${4:-flows}" na nr top ca cr
+    na="$(_cap_count "$af" "$mode")"; nr="$(_cap_count "$rf" "$mode")"; na="${na:-0}"; nr="${nr:-0}"
     top="$(grep -E ' IP6? ' "$af" 2>/dev/null | awk '{p=$5; sub(/\.[0-9]+$/,"",p); print p}' | sort | uniq -c | sort -rn | head -3 | awk '{printf "%s (%s)  ", $2, $1}')"
     ca="$RED"; [ "$na" -gt 0 ] && ca="$GREEN"
     cr="$RED"; [ "$nr" -gt 0 ] && cr="$GREEN"
@@ -118,9 +127,9 @@ sys_watch() {
         xray_apply >/dev/null 2>&1
     fi
 
-    echo -e "\n${BOLD}What reached this server${NC}  (arrived = seen on the network card; answered = this server replied, i.e. the firewall allowed it and something listens)"
-    for pt in 80 443 8443 8080; do _watch_row "TCP $pt" "$tmp/tcp$pt" "$tmp/tcpA$pt"; done
-    for pt in $wgport 666 1194; do [ -n "$pt" ] && _watch_row "UDP $pt$([ "$pt" = "$wgport" ] && echo ' (WireGuard)')" "$tmp/udp$pt" "$tmp/udpA$pt"; done
+    echo -e "\n${BOLD}What reached this server${NC}  (TCP: distinct connections, UDP: packets;  arrived = seen on the network card;  answered = this server replied, i.e. the firewall allowed it and something listens)"
+    for pt in 80 443 8443 8080; do _watch_row "TCP $pt" "$tmp/tcp$pt" "$tmp/tcpA$pt" flows; done
+    for pt in $wgport 666 1194; do [ -n "$pt" ] && _watch_row "UDP $pt$([ "$pt" = "$wgport" ] && echo ' (WireGuard)')" "$tmp/udp$pt" "$tmp/udpA$pt" packets; done
 
     if xray_installed; then
         echo -e "\n${BOLD}What Xray did${NC}"
