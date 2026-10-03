@@ -59,6 +59,52 @@ sys_ports() {
     fi
 }
 
+# One-shot diagnostics for "X does not work" reports. Prints no private keys or passwords
+# (wg show lists public keys only; configs are not dumped).
+sys_diag() {
+    local ip dom dns cm ct ifc
+    ip="$(get_public_ip)"; dom="$(setting_get domain)"
+    echo -e "${BOLD}== Server ==${NC}"
+    echo "  public IP : $ip"
+    echo "  uptime    : $(uptime -p 2>/dev/null)   load: $(cut -d' ' -f1-3 /proc/loadavg)"
+    ct="$(cat /proc/sys/net/netfilter/nf_conntrack_count 2>/dev/null)"; cm="$(cat /proc/sys/net/netfilter/nf_conntrack_max 2>/dev/null)"
+    [ -n "$ct" ] && echo "  conntrack : $ct / $cm"
+    echo "  ip_forward: $(sysctl -n net.ipv4.ip_forward 2>/dev/null)   (VPN needs 1)"
+
+    echo -e "\n${BOLD}== Domain ==${NC}"
+    if [ -n "$dom" ]; then
+        dns="$(getent ahostsv4 "$dom" 2>/dev/null | awk '{print $1; exit}')"
+        echo "  $dom → ${dns:-<no answer>}"
+        if [ -z "$dns" ]; then warn "the domain does not resolve"
+        elif [ "$dns" != "$ip" ]; then warn "it does NOT point at this server ($ip) - a CDN/proxy (e.g. Cloudflare orange cloud) or wrong A record. Plain WS on port 80 usually breaks behind 'Always Use HTTPS'."
+        else ok "DNS points at this server"; fi
+    else echo "  (no domain configured)"; fi
+
+    echo -e "\n${BOLD}== Xray (WebSocket 443 / 80) ==${NC}"
+    if xray_installed; then
+        xray_test 2>&1 | sed 's/^/  /' | grep -vE "^  (101 =|    cert)" || true
+        echo "  loopback HTTP on :80  → $(curl -s --noproxy '*' -m 4 -o /dev/null -w '%{http_code}' http://127.0.0.1:80/ 2>/dev/null) (000/400 = Xray answered or closed; refused = not listening)"
+    else echo "  Xray not installed"; fi
+
+    echo -e "\n${BOLD}== WireGuard ==${NC}"
+    if command -v wg >/dev/null 2>&1 && [ -n "$(wg show interfaces 2>/dev/null)" ]; then
+        for ifc in $(wg show interfaces); do
+            echo "  interface $ifc  listen-port $(wg show "$ifc" listen-port)  address $(ip -4 -o addr show "$ifc" 2>/dev/null | awk '{print $4}' | xargs)"
+        done
+        wg show 2>/dev/null | grep -E "^peer|endpoint|allowed ips|latest handshake|transfer" | sed 's/^/  /'
+        echo "  (a peer with NO 'latest handshake' never reached the server: blocked UDP / wrong endpoint or port / wrong keys)"
+        echo "  NAT   : $(iptables -t nat -S POSTROUTING 2>/dev/null | grep -c MASQUERADE) MASQUERADE rule(s)"
+        echo "  FWD   : $(iptables -S FORWARD 2>/dev/null | head -1)   ufw routed policy: $(grep -E '^DEFAULT_FORWARD_POLICY' /etc/default/ufw 2>/dev/null | cut -d= -f2)"
+        iptables -S FORWARD 2>/dev/null | grep -Ec "wg|ACCEPT" | sed 's/^/  FORWARD rules mentioning wg/ACCEPT: /'
+    else echo "  no WireGuard interface is up"; fi
+
+    echo -e "\n${BOLD}== Firewall ==${NC}"
+    if fw_active; then ufw status | grep -E "^(Status|80|443|666|1194|8080|8443|51820|22)" | sed 's/^/  /' | head -16
+    else echo "  ufw inactive"; fi
+    echo -e "\n${DIM}Provider firewall (the panel of your VPS host) is NOT visible from here: if packets never arrive, open the ports there too.${NC}"
+    echo -e "${DIM}To see whether packets reach the server while you connect:  tcpdump -ni any 'tcp port 80 and not host 127.0.0.1' -c 8   (or: udp port 443)${NC}"
+}
+
 sys_status() {
     echo -e "${BOLD}Services${NC}"
     printf "  %-22s %s\n" "SSH"            "$(svc_state "$(ssh_service)")"
