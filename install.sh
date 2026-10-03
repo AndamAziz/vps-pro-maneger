@@ -36,6 +36,16 @@ command -v systemctl >/dev/null 2>&1 || fail "systemd is required."
 
 if [ -r /etc/os-release ]; then . /etc/os-release; step "Detected: ${PRETTY_NAME:-unknown} ($(uname -m))"; fi
 
+step "Checking connectivity to github.com..."
+if ! getent hosts github.com >/dev/null 2>&1; then
+    echo -e "${R}✖ This server cannot resolve github.com (DNS problem).${N}" >&2
+    echo "  Fix DNS first, e.g.:" >&2
+    echo "    mkdir -p /etc/systemd/resolved.conf.d && printf '[Resolve]\\nDNS=1.1.1.1 8.8.8.8\\nFallbackDNS=9.9.9.9\\n' > /etc/systemd/resolved.conf.d/dns.conf && systemctl restart systemd-resolved" >&2
+    echo "  then run this installer again." >&2
+    exit 1
+fi
+curl -fsSI -m 15 https://github.com >/dev/null 2>&1 || fail "Cannot reach https://github.com (firewall / network). Check outbound HTTPS and try again."
+
 step "Installing dependencies..."
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq >/dev/null 2>&1 || true
@@ -44,7 +54,8 @@ apt-get install -y -qq curl ca-certificates jq openssl qrencode git tar iproute2
 
 step "Fetching VPS Manager Pro ($REPO@$BRANCH)..."
 if [ -d "$HOME_DIR/.git" ]; then
-    git -C "$HOME_DIR" fetch -q origin "$BRANCH" && git -C "$HOME_DIR" checkout -q "$BRANCH" 2>/dev/null || true
+    git -C "$HOME_DIR" fetch -q origin "$BRANCH" || fail "Update failed: could not fetch $BRANCH from GitHub."
+    git -C "$HOME_DIR" checkout -q -B "$BRANCH" "origin/$BRANCH" 2>/dev/null || true
     git -C "$HOME_DIR" reset -q --hard "origin/$BRANCH" || fail "Update failed."
 elif git clone -q --depth 1 -b "$BRANCH" "https://github.com/$REPO.git" "$HOME_DIR.new" 2>/dev/null; then
     rm -rf "$HOME_DIR"; mv "$HOME_DIR.new" "$HOME_DIR"
