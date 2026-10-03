@@ -77,6 +77,18 @@ setting_set xray_loglevel warning
 check "xray log level overridable"       '[ "$(xray_build_config | jq -r .log.loglevel)" = warning ]'
 setting_del xray_loglevel
 
+
+# --- Reality key parsing for every known `xray x25519` output format
+for fmt in new old; do
+    if [ "$fmt" = new ]; then XRAY_BIN="$TMP/x25519"; printf '#!/bin/sh\nprintf "PrivateKey: PRIVNEW\\nPassword (PublicKey): PUBNEW\\nHash32: HASH\\n"\n' > "$XRAY_BIN"
+    else XRAY_BIN="$TMP/x25519"; printf '#!/bin/sh\nprintf "Private key: PRIVOLD\\nPublic key: PUBOLD\\n"\n' > "$XRAY_BIN"; fi
+    chmod +x "$XRAY_BIN"
+    R_PRIV=""; R_PUB=""; xray_gen_reality_keys
+    if [ "$fmt" = new ]; then check "x25519 parser: Xray 26.x format" '[ "$R_PRIV" = PRIVNEW ] && [ "$R_PUB" = PUBNEW ]'
+    else check "x25519 parser: older format" '[ "$R_PRIV" = PRIVOLD ] && [ "$R_PUB" = PUBOLD ]'; fi
+done
+XRAY_BIN=/bin/true
+
 # --- hysteria2 config
 HY2_BIN=/bin/true; HY2_DIR="$TMP/hy"; HY2_CONF="$HY2_DIR/config.yaml"; mkdir -p "$HY2_DIR"
 setting_set hy2_port 443; setting_set hy2_obfs secret

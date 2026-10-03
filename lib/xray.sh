@@ -160,10 +160,13 @@ inb_add() { # inb_add JSON
 xray_inbound_exists() { jq -e --arg t "$1" 'any(.[]; .tag==$t)' "$XRAY_INB" >/dev/null 2>&1; }
 
 xray_gen_reality_keys() { # sets R_PRIV R_PUB
+    # Output differs between Xray versions:
+    #   old : "Private key: X" / "Public key: Y"
+    #   new : "PrivateKey: X"  / "Password (PublicKey): Y" / "Hash32: Z"
     local out
     out="$("$XRAY_BIN" x25519 2>/dev/null)"
-    R_PRIV="$(echo "$out" | awk -F': *' 'tolower($1) ~ /^private ?key$/ {print $2; exit}')"
-    R_PUB="$(echo "$out" | awk -F': *' 'tolower($1) ~ /^(public ?key|password)$/ {print $2; exit}')"
+    R_PRIV="$(awk -F': *' '{l=tolower($1)} l ~ /private/ {print $2; exit}' <<<"$out")"
+    R_PUB="$(awk -F': *' '{l=tolower($1)} l !~ /private/ && (l ~ /public/ || l ~ /^password/) {print $2; exit}' <<<"$out")"
     [ -n "$R_PRIV" ] && [ -n "$R_PUB" ]
 }
 
