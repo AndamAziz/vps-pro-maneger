@@ -161,6 +161,7 @@ ovpn_add_instance() {
 }
 
 # Install: UDP and TCP together (ports can be given: ovpn_install [UDP_PORT] [TCP_PORT])
+# shellcheck disable=SC2120  # called with ports from the vpsmanager CLI
 ovpn_install() {
     require_root
     local up="${1:-}" tp="${2:-}" rc=0
