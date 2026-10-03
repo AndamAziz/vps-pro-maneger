@@ -30,10 +30,29 @@ http_port $port
 visible_hostname vpsmanager
 max_filedescriptors 65535
 
-# No port restrictions: HTTP, HTTPS (CONNECT) and every other port work
+# Abuse protection (also applies when the proxy is open to everyone)
 http_access deny manager
+# never let clients reach this server or private networks (SSH, Xray API, panels ...)
+acl private_dst dst 127.0.0.0/8 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 169.254.0.0/16 0.0.0.0/8 100.64.0.0/10
+acl private_dst6 dst ::1/128 fc00::/7 fe80::/10
+http_access deny private_dst
+http_access deny private_dst6
+# no outgoing mail / NetBIOS / telnet (spam and scanning abuse gets VPSs suspended)
+acl abuse_ports port 25 465 587 23 135 137 138 139 445
+http_access deny abuse_ports
+# at most 80 simultaneous connections per client address
+acl too_many_conns maxconn 80
+http_access deny too_many_conns
 $access
 http_access deny all
+
+# Free idle sockets quickly (small VPS)
+client_idle_pconn_timeout 20 seconds
+pconn_timeout 30 seconds
+request_timeout 30 seconds
+connect_timeout 20 seconds
+half_closed_clients off
+cache_mem 8 MB
 
 # Privacy / speed
 forwarded_for delete
