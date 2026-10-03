@@ -447,6 +447,19 @@ xray_test() {
     [ "$bad" -eq 0 ]
 }
 
+# xray_loglevel [none|error|warning|info|debug]   (no argument: show the current level)
+# 'info' also logs every accepted connection - useful to see whether a client reaches Xray;
+# set it back to 'error' afterwards (a busy server writes a lot).
+xray_loglevel() {
+    local lvl="${1:-}" cur
+    cur="$(setting_get xray_loglevel)"; cur="${cur:-error}"
+    if [ -z "$lvl" ]; then echo "Xray log level: $cur"; return 0; fi
+    case "$lvl" in none|error|warning|info|debug) ;; *) err "Level must be one of: none error warning info debug"; return 1 ;; esac
+    setting_set xray_loglevel "$lvl"
+    xray_installed && xray_apply
+    ok "Xray log level: $lvl$([ "$lvl" = info ] || [ "$lvl" = debug ] && echo "  (see: journalctl -u xray -f ; back to quiet: vpsmanager xray loglevel error)")"
+}
+
 xray_menu() {
     while true; do
         menu_header "🚀 Xray-core  (VLESS / VMess / Trojan / Shadowsocks)   [$(svc_state xray)]"

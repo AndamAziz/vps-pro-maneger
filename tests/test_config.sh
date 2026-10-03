@@ -89,6 +89,16 @@ for fmt in new old; do
 done
 XRAY_BIN=/bin/true
 
+
+# --- xray_loglevel command
+systemctl() { return 0; }
+XRAY_BIN=/bin/true; svc_active() { return 1; }
+check "loglevel without argument shows the level"   '[ "$(xray_loglevel)" = "Xray log level: error" ]'
+xray_loglevel info >/dev/null 2>&1
+check "loglevel info is stored and used by the config" '[ "$(setting_get xray_loglevel)" = info ] && [ "$(xray_build_config | jq -r .log.loglevel)" = info ]'
+check "invalid level is rejected"                   '! xray_loglevel verbose >/dev/null 2>&1 && [ "$(setting_get xray_loglevel)" = info ]'
+xray_loglevel error >/dev/null 2>&1; setting_del xray_loglevel
+
 # --- hysteria2 config
 HY2_BIN=/bin/true; HY2_DIR="$TMP/hy"; HY2_CONF="$HY2_DIR/config.yaml"; mkdir -p "$HY2_DIR"
 setting_set hy2_port 443; setting_set hy2_obfs secret
