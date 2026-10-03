@@ -34,7 +34,11 @@ sys_ports() {
         print proto "\t" port "\t" proc "\t" scope }' | sort -t$'\t' -k1,1 -k2,2n -u)"
     [ -n "$rows" ] || { echo "No listening ports found."; return; }
     printf "${BOLD}%-6s %-8s %-18s %s${NC}\n" "PROTO" "PORT" "PROCESS" "ACCESS"
+    # WireGuard is a kernel socket: ss shows no process name for it
+    local wgports ifc
+    wgports="$(for ifc in $(wg show interfaces 2>/dev/null); do wg show "$ifc" listen-port 2>/dev/null; done)"
     while IFS=$'\t' read -r proto port proc scope; do
+        [ "$proc" = "-" ] && [ "$proto" = udp ] && grep -qx "$port" <<<"$wgports" && proc="wireguard"
         local col="$GREEN"; [ "$scope" = local-only ] && col="$DIM"
         printf "%-6s %-8s %-18s ${col}%s${NC}\n" "$proto" "$port" "$proc" "$scope"
     done <<<"$rows"
@@ -42,7 +46,7 @@ sys_ports() {
     echo -e "Open to the internet: ${BOLD}$(awk -F'\t' '$4=="public" && $1=="tcp"' <<<"$rows" | wc -l) TCP${NC} + ${BOLD}$(awk -F'\t' '$4=="public" && $1=="udp"' <<<"$rows" | wc -l) UDP${NC} port(s)"
     if fw_active; then
         echo -e "Firewall (ufw): ${GREEN}active${NC} - allowed rules:"
-        ufw status | awk '/ALLOW/ && !/\(v6\)/ {print "   " $1}' | sort -un | tr '\n' ' '; echo
+        ufw status | awk '/ALLOW/ && !/\(v6\)/ {print $1}' | sort -t/ -k1,1n -k2,2 -u | sed 's/^/   /' | tr '\n' ' '; echo
     else
         echo -e "Firewall (ufw): ${YELLOW}inactive${NC} - every listening public port is reachable (unless your hosting provider blocks it)."
     fi

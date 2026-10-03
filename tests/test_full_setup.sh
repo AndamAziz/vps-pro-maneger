@@ -93,4 +93,13 @@ check "xray public TCP port (8443) is allowed"          'printf "%s\n" "${UFW[@]
 check "squid TCP port is allowed, its random UDP not"   'printf "%s\n" "${UFW[@]}" | grep -qx "allow 8080/tcp" && ! printf "%s\n" "${UFW[@]}" | grep -q "19809"'
 check "loopback-only listeners are NOT opened"          '! printf "%s\n" "${UFW[@]}" | grep -qE "10801|44870"'
 
+# 7) sys_ports labels WireGuard's process-less UDP socket and keeps ufw tcp/udp rules apart
+out="$(sys_ports 2>&1 | sed 's/\x1b\[[0-9;]*m//g')"
+check "ports table names the WireGuard socket (udp 443)"  'grep -Eq "^udp +443 +wireguard" <<<"$out"'
+check "other sockets keep their process names"            'grep -Eq "^udp +666 +hysteria" <<<"$out"'
+fw_active() { return 0; }
+ufw() { case "$1" in status) printf 'Status: active\n443/tcp ALLOW Anywhere\n443/udp ALLOW Anywhere\n22/tcp ALLOW Anywhere\n443/tcp (v6) ALLOW Anywhere (v6)\n' ;; esac; }
+out="$(sys_ports 2>&1 | sed 's/\x1b\[[0-9;]*m//g')"
+check "ufw summary lists 443/tcp AND 443/udp"             'grep -q "443/tcp" <<<"$out" && grep -q "443/udp" <<<"$out"'
+
 [ $fail = 0 ] && echo "ALL FULL-SETUP TESTS PASSED" || { echo "SOME TESTS FAILED"; exit 1; }
