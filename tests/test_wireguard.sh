@@ -45,6 +45,27 @@ LIVE_PORT=""; wg() { case "$1" in show) return 1 ;; genkey) echo K ;; pubkey) re
 out="$(wg_add_client broken 2>&1)"; rc=$?
 check "interface down → clear error, no half-written client"        '[ $rc -ne 0 ] && grep -q "Cannot read the WireGuard port" <<<"$out" && [ ! -f "$WG_CLIENTS/broken.conf" ]'
 
+# --- _fw_deltas: which rule counted the packets between two iptables-save -c snapshots
+cat > "$TMP/fw_a" <<'FW'
+:INPUT DROP [100:9000]
+:FORWARD DROP [0:0]
+[500:40000] -A INPUT -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
+[20:1600] -A ufw-before-input -m conntrack --ctstate INVALID -j DROP
+[3:400] -A ufw-user-input -p udp -m udp --dport 443 -j ACCEPT
+FW
+cat > "$TMP/fw_b" <<'FW'
+:INPUT DROP [100:9000]
+:FORWARD DROP [0:0]
+[900:70000] -A INPUT -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
+[31:2400] -A ufw-before-input -m conntrack --ctstate INVALID -j DROP
+[3:400] -A ufw-user-input -p udp -m udp --dport 443 -j ACCEPT
+FW
+out="$(_fw_deltas "$TMP/fw_a" "$TMP/fw_b")"
+check "_fw_deltas reports the rule whose counter grew (INVALID DROP +11)"      'grep -qP "^11\t-A ufw-before-input -m conntrack --ctstate INVALID -j DROP" <<<"$out"'
+check "…and the busiest rule first, rules that did not grow are omitted"      '[ "$(head -1 <<<"$out" | cut -f1)" = 400 ] && ! grep -q "dport 443" <<<"$out"'
+sed -i 's/^:INPUT DROP \[100:9000\]/:INPUT DROP [112:9500]/' "$TMP/fw_b"
+check "_fw_deltas also reports growing chain policies (default DROP)"          '_fw_deltas "$TMP/fw_a" "$TMP/fw_b" | grep -qP "^12\tpolicy INPUT DROP"'
+
 # --- wg_debug: verdict from tcpdump (arrived / size / answered) + kernel log
 . "$ROOT/lib/system.sh"            # _cap_count
 need_cmd() { return 0; }; get_public_ip() { echo 203.0.113.9; }; wg_live_port() { echo 443; }
@@ -52,6 +73,7 @@ export WG_DEBUG_CTL="$TMP/dd_control"; : > "$WG_DEBUG_CTL"
 wg() { [ "${2:-}" = interfaces ] && echo wg0; }          # called as: wg show interfaces
 sleep() { :; }; timeout() { shift; "$@"; }
 IN=""; OUT=""; KLOG=""
+iptables-save() { :; }; sysctl() { :; }
 tcpdump() { case "$*" in *"dst port"*) printf '%b' "$IN" ;; *"src port"*) printf '%b' "$OUT" ;; esac; }
 journalctl() { printf '%s\n' "$KLOG"; }
 init_line() { printf '00:00:01 ens6  In  IP 92.40.218.68.5000 > 203.0.113.9.443: UDP, length 148\n'; }
@@ -62,7 +84,7 @@ check "nothing arrived → says the tunnel may not have been switched on / wrong
 
 IN="$(for i in 1 2 3; do init_line; done)\n"; OUT=""; KLOG=""; out="$(dbg)"
 check "148-byte handshakes counted and recognised"                                'grep -q "handshake initiations (148 B)   : 3" <<<"$out" && grep -q "148 bytes x3" <<<"$out"'
-check "initiations arrived, server sent nothing → key mismatch advice"            'grep -q "sent NOTHING back" <<<"$out" && grep -q "wg add" <<<"$out"'
+check "initiations arrived, nothing sent back → points at the firewall list, then keys"  'grep -q "sent NOTHING back" <<<"$out" && grep -q "firewall list above" <<<"$out" && grep -q "wg add" <<<"$out"'
 
 KLOG=$'kernel: wireguard: wg0: Invalid handshake initiation from 92.40.218.68:5000'; out="$(dbg)"
 check "kernel says Invalid → REJECTED, keys do not match"                         'grep -q "REJECTED" <<<"$out"'
