@@ -102,4 +102,31 @@ ufw() { case "$1" in status) printf 'Status: active\n443/tcp ALLOW Anywhere\n443
 out="$(sys_ports 2>&1 | sed 's/\x1b\[[0-9;]*m//g')"
 check "ufw summary lists 443/tcp AND 443/udp"             'grep -q "443/tcp" <<<"$out" && grep -q "443/udp" <<<"$out"'
 
+# 8) xray/squid ephemeral UDP sockets: hidden in `ports`, never opened by the firewall
+ss() { cat <<'SS'
+tcp   LISTEN 0 4 0.0.0.0:443     0.0.0.0:*  users:(("xray",pid=2,fd=4))
+udp   UNCONN 0 0 0.0.0.0:666     0.0.0.0:*  users:(("hysteria",pid=1,fd=3))
+udp   UNCONN 0 0 0.0.0.0:8388    0.0.0.0:*  users:(("xray",pid=2,fd=9))
+udp   UNCONN 0 0 *:10299         *:*  users:(("xray",pid=2,fd=11))
+udp   UNCONN 0 0 *:10923         *:*  users:(("xray",pid=2,fd=12))
+udp   UNCONN 0 0 *:19809         *:*  users:(("squid",pid=3,fd=7))
+udp   UNCONN 0 0 127.0.0.1:10804 0.0.0.0:*  users:(("xray",pid=2,fd=13))
+SS
+}
+mkdir -p "$TMP/etc"; echo '[{"tag":"ss2022-8388","type":"ss2022","port":8388,"serverKey":"k"}]' > "$XRAY_INB"
+wg() { :; }; fw_active() { return 1; }
+out="$(sys_ports 2>&1 | sed 's/\x1b\[[0-9;]*m//g')"
+check "random xray UDP sockets are hidden"                '! grep -Eq "10299|10923|19809" <<<"$out"'
+check "…and the hidden ones are counted for the user"     'grep -q "3 temporary UDP sockets" <<<"$out"'
+check "a real Shadowsocks-2022 UDP inbound stays visible" 'grep -Eq "^udp +8388 +xray" <<<"$out"'
+check "hysteria and xray TCP stay visible"                'grep -Eq "^udp +666 +hysteria" <<<"$out" && grep -Eq "^tcp +443 +xray" <<<"$out"'
+check "ephemeral sockets are not counted as open ports"   'grep -q "Open to the internet: 1 TCP + 2 UDP" <<<"$out"'
+# (section 7 replaced the ufw stub; restore the recording one, otherwise nothing is captured)
+UFW=(); ADDED=$'ufw allow 22/tcp\n'
+ufw() { case "$1" in show) printf '%s' "$ADDED" ;; *) UFW+=("$*") ;; esac; }
+fw_enable >/dev/null 2>&1
+check "the recorder captured the firewall rules"          '[ "${#UFW[@]}" -gt 3 ]'
+check "firewall does NOT open xray's random UDP ports"    '! printf "%s\n" "${UFW[@]}" | grep -qE "10299|10923|19809"'
+check "firewall still opens hysteria 666/udp + xray 443"  'printf "%s\n" "${UFW[@]}" | grep -qx "allow 666/udp" && printf "%s\n" "${UFW[@]}" | grep -qx "allow 443/tcp"'
+
 [ $fail = 0 ] && echo "ALL FULL-SETUP TESTS PASSED" || { echo "SOME TESTS FAILED"; exit 1; }

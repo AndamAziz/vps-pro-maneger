@@ -33,6 +33,12 @@ sys_ports() {
         scope=(addr ~ /^(127\.|\[::1\])/) ? "local-only" : "public";
         print proto "\t" port "\t" proc "\t" scope }' | sort -t$'\t' -k1,1 -k2,2n -u)"
     [ -n "$rows" ] || { echo "No listening ports found."; return; }
+    # xray/squid open short-lived UDP sockets on random ports for proxied UDP traffic (QUIC, calls, games).
+    # They are not listeners we configured: hide them, except a real Shadowsocks-2022 inbound port.
+    local cfgudp hidden
+    cfgudp="$(jq -r '.[]|select(.type=="ss2022")|.port' "$XRAY_INB" 2>/dev/null | tr '\n' ' ')"
+    hidden="$(awk -F'\t' -v cfg=" $cfgudp" '$1=="udp" && $4=="public" && ($3=="xray" || $3=="squid") && index(cfg, " " $2 " ")==0' <<<"$rows" | wc -l)"
+    rows="$(awk -F'\t' -v cfg=" $cfgudp" '!($1=="udp" && $4=="public" && ($3=="xray" || $3=="squid") && index(cfg, " " $2 " ")==0)' <<<"$rows")"
     printf "${BOLD}%-6s %-8s %-18s %s${NC}\n" "PROTO" "PORT" "PROCESS" "ACCESS"
     # WireGuard is a kernel socket: ss shows no process name for it
     local wgports ifc
@@ -42,6 +48,7 @@ sys_ports() {
         local col="$GREEN"; [ "$scope" = local-only ] && col="$DIM"
         printf "%-6s %-8s %-18s ${col}%s${NC}\n" "$proto" "$port" "$proc" "$scope"
     done <<<"$rows"
+    [ "${hidden:-0}" -gt 0 ] && echo -e "${DIM}(+${hidden} temporary UDP sockets of xray/squid hidden - proxied UDP traffic, not open ports)${NC}"
     echo ""
     echo -e "Open to the internet: ${BOLD}$(awk -F'\t' '$4=="public" && $1=="tcp"' <<<"$rows" | wc -l) TCP${NC} + ${BOLD}$(awk -F'\t' '$4=="public" && $1=="udp"' <<<"$rows" | wc -l) UDP${NC} port(s)"
     if fw_active; then
@@ -162,8 +169,10 @@ fw_enable() {
     done < <(ss -H -lntup 2>/dev/null | awk '
         $5 ~ /^(127\.|\[::1\])/ { next }
         { n = split($5, a, ":"); port = a[n] }
-        /"(xray|hysteria|openvpn)"/ { print $1, port }
-        /"squid"/ && $1 == "tcp"    { print $1, port }')
+        /"(hysteria|openvpn)"/       { print $1, port }
+        /"(xray|squid)"/ && $1 == "tcp" { print $1, port }')
+    # (xray / squid UDP sockets are short-lived, randomly numbered sockets for proxied UDP flows - never opened;
+    #  a real UDP inbound such as Shadowsocks-2022 is already opened from the inbound list above)
     # safety: refuse to turn the firewall on if SSH is not in the allowed set (would lock you out)
     for p in $sshports; do
         ufw show added 2>/dev/null | grep -Eq "allow ($p|$p/tcp)\b" || { err "SSH port $p is not allowed in ufw - NOT enabling the firewall."; return 1; }
