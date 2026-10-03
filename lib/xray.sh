@@ -114,7 +114,7 @@ xray_build_config() {
 xray_apply() {
     xray_installed || return 0
     [ -s "$XRAY_INB" ] || echo '[]' > "$XRAY_INB"
-    local tmp; tmp="$(mktemp)"
+    local tmp; tmp="$(mktemp --suffix=.json)"   # Xray picks the parser from the extension
     if ! xray_build_config > "$tmp"; then err "Could not build Xray config."; rm -f "$tmp"; return 1; fi
     if ! "$XRAY_BIN" run -test -config "$tmp" >/dev/null 2>&1; then
         err "Generated Xray config failed validation:"
