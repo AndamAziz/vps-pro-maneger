@@ -91,11 +91,17 @@ sys_diag() {
         for ifc in $(wg show interfaces); do
             echo "  interface $ifc  listen-port $(wg show "$ifc" listen-port)  address $(ip -4 -o addr show "$ifc" 2>/dev/null | awk '{print $4}' | xargs)"
         done
-        wg show 2>/dev/null | grep -E "^peer|endpoint|allowed ips|latest handshake|transfer" | sed 's/^/  /'
-        echo "  (a peer with NO 'latest handshake' never reached the server: blocked UDP / wrong endpoint or port / wrong keys)"
+        local pk ts now; now="$(date +%s)"
+        for ifc in $(wg show interfaces); do
+            while read -r pk ts; do
+                if [ "${ts:-0}" = 0 ]; then echo -e "  peer ${pk:0:10}…  handshake: ${RED}NEVER${NC} - this client never reached the server"
+                else echo -e "  peer ${pk:0:10}…  handshake: ${GREEN}$((now - ts))s ago${NC}"; fi
+            done < <(wg show "$ifc" latest-handshakes 2>/dev/null)
+        done
+        echo "  (NEVER = blocked UDP, wrong Endpoint/port in the client, or wrong keys; the client must use port $(wg show "$(wg show interfaces | awk '{print $1}')" listen-port))"
         echo "  NAT   : $(iptables -t nat -S POSTROUTING 2>/dev/null | grep -c MASQUERADE) MASQUERADE rule(s)"
         echo "  FWD   : $(iptables -S FORWARD 2>/dev/null | head -1)   ufw routed policy: $(grep -E '^DEFAULT_FORWARD_POLICY' /etc/default/ufw 2>/dev/null | cut -d= -f2)"
-        iptables -S FORWARD 2>/dev/null | grep -Ec "wg|ACCEPT" | sed 's/^/  FORWARD rules mentioning wg/ACCEPT: /'
+        echo "  FORWARD rules with ACCEPT: $(iptables -S FORWARD 2>/dev/null | grep -c ACCEPT)"
     else echo "  no WireGuard interface is up"; fi
 
     echo -e "\n${BOLD}== Firewall ==${NC}"
