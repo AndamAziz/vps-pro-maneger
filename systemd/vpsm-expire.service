@@ -1,0 +1,6 @@
+[Unit]
+Description=VPS Manager Pro - apply user expiry
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/vpsmanager expire
