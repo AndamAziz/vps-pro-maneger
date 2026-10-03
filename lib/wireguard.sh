@@ -161,7 +161,7 @@ _fw_deltas() {
 #   3. the peers' handshake times
 wg_debug() {
     local secs="${1:-40}" ctl="${WG_DEBUG_CTL:-/sys/kernel/debug/dynamic_debug/control}" mark log
-    local port ip tmp arrived answered inits sizes left kdbg=1 now ifc pk ts hs oldcost fwd wrule wcount
+    local port ip tmp arrived answered inits sizes left kdbg=1 now ifc pk ts hs oldcost fwd fwsmall badck wrule wcount
     [[ "$secs" =~ ^[0-9]+$ ]] && [ "$secs" -ge 5 ] && [ "$secs" -le 300 ] || { err "Seconds must be 5-300."; return 1; }
     [ -n "$(wg show interfaces 2>/dev/null)" ] || { err "No WireGuard interface is up."; return 1; }
     need_cmd tcpdump || return 1
@@ -176,6 +176,8 @@ wg_debug() {
     iptables-save -c > "$tmp/fw_before" 2>/dev/null
     timeout "$secs" tcpdump -nn -l -i any "udp dst port $port and dst host $ip" > "$tmp/in" 2>/dev/null &
     timeout "$secs" tcpdump -nn -l -i any "udp src port $port and src host $ip" > "$tmp/out" 2>/dev/null &
+    # verbose capture: tcpdump -vv reports "bad udp cksum" for damaged packets (the kernel drops those as INVALID)
+    timeout "$secs" tcpdump -nn -vv -l -i any "udp dst port $port and dst host $ip" > "$tmp/ck" 2>/dev/null &
 
     echo -e "${BOLD}${YELLOW}▶ Switch the WireGuard tunnel ON now, on your phone/PC (watching UDP $port for ${secs}s).${NC}"
     left="$secs"
@@ -189,8 +191,12 @@ wg_debug() {
     [ -n "$oldcost" ] && sysctl -qw net.core.message_cost="$oldcost" 2>/dev/null
     local alld; alld="$(_fw_deltas "$tmp/fw_before" "$tmp/fw_after" "udp.* --dport ${port}( |\$)" 2>/dev/null)"
     wrule="$(grep -E "udp.* --dport ${port}( |\$)" <<<"$alld" | head -3)"                 # the allow rule(s) for the WireGuard port
-    fwd="$(grep -Ei 'INVALID|DROP|REJECT|policy' <<<"$alld" | head -4)"                   # what dropped things meanwhile
+    fwd="$(grep -Ei 'INVALID|DROP|REJECT|policy' <<<"$alld" | head -4)"                   # biggest droppers (usually scanner floods)
+    # rules that counted only a FEW packets: a flood of scanner traffic drowns out the top of the list, but a
+    # handful of counted packets is what your own handshakes look like
+    fwsmall="$(awk -F'\t' -v n="${inits:-0}" '$1>=1 && $1<=n*3+50' <<<"$alld" | grep -v "dport ${port}( |\$)" | head -8)"
     wcount="$(head -1 <<<"$wrule" | cut -f1)"
+    badck="$(grep -c 'bad udp cksum' "$tmp/ck" 2>/dev/null || true)"; badck="${badck:-0}"
 
     arrived="$(_cap_count "$tmp/in")"; answered="$(_cap_count "$tmp/out")"; arrived="${arrived:-0}"; answered="${answered:-0}"
     inits="$(grep -cE 'length 148$' "$tmp/in" 2>/dev/null || true)"; inits="${inits:-0}"
@@ -201,9 +207,12 @@ wg_debug() {
     echo "  packets that reached the server : $arrived   ${sizes:+(sizes: $sizes)}"
     echo "  packets the server sent back    : $answered"
     echo "  handshake initiations (148 B)   : $inits"
+    echo "  packets with a BAD UDP checksum : $badck"
     echo -e "\n${BOLD}Firewall: the allow rule for UDP $port${NC}  (packets it counted during the test, rule)"
     if [ -n "$wrule" ]; then echo "$wrule" | awk -F'\t' '{printf "  %7s  %s\n", $1, $2}'; else echo "  (no iptables rule mentions UDP $port - nothing allows it)"; fi
-    echo -e "${BOLD}Firewall: what dropped packets meanwhile${NC}"
+    echo -e "${BOLD}Firewall: rules that counted only a few packets${NC}  (your handshakes are probably here)"
+    if [ -n "$fwsmall" ]; then echo "$fwsmall" | awk -F'\t' '{printf "  %7s  %s\n", $1, $2}'; else echo "  (none)"; fi
+    echo -e "${BOLD}Firewall: biggest droppers meanwhile${NC}  (scanner floods, not you)"
     if [ -n "$fwd" ]; then echo "$fwd" | awk -F'\t' '{printf "  %7s  %s\n", $1, $2}'; else echo "  (nothing)"; fi
     echo -e "\n${BOLD}Kernel messages${NC}"
     if [ -n "$log" ]; then echo "$log" | sed 's/^/  /'
@@ -236,8 +245,12 @@ wg_debug() {
                 err "...but NO firewall rule allows UDP $port: the firewall drops them. Allow it:  ufw allow $port/udp"
             elif [ "${wcount:-0}" -ge "$inits" ]; then
                 err "...the firewall ACCEPTED them (allow rule counted $wcount) but WireGuard did not answer. Since it silently drops handshakes it cannot verify, this is a KEY mismatch (or the interface is not the one bound to UDP $port). Delete the tunnel in the app and import a FRESH config: vpsmanager wg add <new-name>"
+            elif [ "$badck" -ge 1 ]; then
+                err "...but $badck of them have a BAD UDP checksum: they are damaged on the way (a mobile network / NAT / middlebox rewriting them), so the kernel marks them INVALID and the firewall drops them before WireGuard sees them. The server cannot fix this: use another port or another transport (Xray WebSocket / Reality, Hysteria 2)."
+            elif grep -q 'INVALID' <<<"$fwsmall"; then
+                err "...and the firewall counted them on an INVALID rule (see the list above): the kernel's connection tracking rejects them as malformed. Same remedy: another port or transport."
             else
-                err "...but the UDP $port allow rule counted only ${wcount:-0} of $inits packets: something EARLIER in the firewall drops them before they reach it (see 'what dropped packets meanwhile' above)."
+                err "...but the UDP $port allow rule counted only ${wcount:-0} of $inits packets: a rule EARLIER in the firewall handles them first (see 'rules that counted only a few packets' above)."
             fi
         fi
     fi

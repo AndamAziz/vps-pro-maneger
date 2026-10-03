@@ -74,7 +74,8 @@ wg() { [ "${2:-}" = interfaces ] && echo wg0; }          # called as: wg show in
 sleep() { :; }; timeout() { shift; "$@"; }
 IN=""; OUT=""; KLOG=""
 iptables-save() { :; }; sysctl() { :; }
-tcpdump() { case "$*" in *"dst port"*) printf '%b' "$IN" ;; *"src port"*) printf '%b' "$OUT" ;; esac; }
+CK=""
+tcpdump() { case "$*" in *-vv*) printf '%b' "$CK" ;; *"dst port"*) printf '%b' "$IN" ;; *"src port"*) printf '%b' "$OUT" ;; esac; }
 journalctl() { printf '%s\n' "$KLOG"; }
 init_line() { printf '00:00:01 ens6  In  IP 92.40.218.68.5000 > 203.0.113.9.443: UDP, length 148\n'; }
 dbg() { wg_debug 5 2>&1 | sed 's/\x1b\[[0-9;]*m//g'; }
@@ -100,10 +101,26 @@ fw_case() { # fw_case ALLOW_COUNT_AFTER
 out="$(fw_case 6)"
 check "allow rule counted all 3 (3→6) → firewall accepted them → KEY mismatch"      'grep -q "firewall ACCEPTED them" <<<"$out" && grep -q "KEY mismatch" <<<"$out" && grep -qE "^ +3 +-A ufw-user-input.*--dport 443" <<<"$out"'
 out="$(fw_case 3)"
-check "allow rule counted 0 (3→3) → something EARLIER drops them"                   'grep -q "something EARLIER in the firewall drops them" <<<"$out" && grep -qE "^ +0 +-A ufw-user-input.*--dport 443" <<<"$out"'
+check "allow rule counted 0 (3→3) → a rule EARLIER handles them first"              'grep -q "a rule EARLIER in the firewall handles them first" <<<"$out" && grep -qE "^ +0 +-A ufw-user-input.*--dport 443" <<<"$out"'
 iptables-save() { :; }
 IN="$(for i in 1 2 3; do init_line; done)\n"; OUT=""; KLOG=""; out="$(dbg)"
 check "unreadable firewall → says so instead of blaming the firewall or the keys"      'grep -q "could not read the firewall rules" <<<"$out" && ! grep -q "NO firewall rule allows" <<<"$out"'
+
+# INVALID rule counting the handshakes / bad checksums are named explicitly
+INVA=$'[3:400] -A ufw-user-input -p udp -m udp --dport 443 -j ACCEPT\n[20:1600] -A ufw-before-input -m conntrack --ctstate INVALID -j DROP'
+INVB=$'[3:400] -A ufw-user-input -p udp -m udp --dport 443 -j ACCEPT\n[32:2500] -A ufw-before-input -m conntrack --ctstate INVALID -j DROP'
+inv_case() { # inv_case CKSUM_OUTPUT
+    IN="$(for i in 1 2 3; do init_line; done)\n"; OUT=""; KLOG=""; CK="$1"
+    printf '%s\n' "$INVA" > "$TMP/snapA"; printf '%s\n' "$INVB" > "$TMP/snapB"
+    iptables-save() { if [ -e "$TMP/.second" ]; then cat "$TMP/snapB"; else cat "$TMP/snapA"; touch "$TMP/.second"; fi; }
+    rm -f "$TMP/.second"; dbg
+}
+out="$(inv_case '')"
+check "INVALID DROP counting a few packets is listed among the small counters"        'grep -qE "^ +12 +-A ufw-before-input.*INVALID.*DROP" <<<"$out"'
+check "…and named: the kernel rejects them as malformed"                             'grep -q "INVALID rule" <<<"$out"'
+out="$(inv_case '00:00:01 IP (tos 0x0, ttl 52, id 1, proto UDP (17), length 176)\n92.40.218.68.5000 > 203.0.113.9.443: [bad udp cksum 0xabcd -> 0x1234!] UDP, length 148\n')"
+check "bad UDP checksum is counted and named as the cause"                           'grep -q "BAD UDP checksum : 1" <<<"$out" && grep -q "damaged on the way" <<<"$out"'
+CK=""; iptables-save() { :; }
 
 KLOG=$'kernel: wireguard: wg0: Invalid handshake initiation from 92.40.218.68:5000'; out="$(dbg)"
 check "kernel says Invalid → REJECTED, keys do not match"                         'grep -q "REJECTED" <<<"$out"'
