@@ -185,6 +185,7 @@ sshws_write_unit() { # uses settings sshws_listen
 }
 
 # sshws_install [PORT]   PORT only matters when Xray WS is not installed (default 80, public)
+# shellcheck disable=SC2120  # called with a port from the vpsmanager CLI
 sshws_install() {
     require_root
     local port="${1:-80}" listen
