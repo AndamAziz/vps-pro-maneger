@@ -9,7 +9,16 @@ UDPGW_SVC="badvpn-udpgw"
 
 ssh_service() { systemctl list-unit-files ssh.service >/dev/null 2>&1 && echo ssh || echo sshd; }
 
-ssh_current_ports() { awk '/^[[:space:]]*Port[[:space:]]+[0-9]+/ {print $2}' "$SSHD_CONF" | sort -un | tr '\n' ' '; }
+# Effective SSH port(s): what sshd really uses (sshd -T), plus anything sshd is listening on; 22 as last resort.
+# NOTE: a commented "#Port 22" in sshd_config means the default 22 - parsing the file alone returns nothing.
+ssh_current_ports() {
+    local ports
+    ports="$( { sshd -T 2>/dev/null | awk '$1=="port"{print $2}'
+                ss -ltnp 2>/dev/null | awk '/"sshd"/{n=split($4,a,":"); print a[n]}'; } | sort -un | tr '\n' ' ')"
+    [ -n "${ports// /}" ] || ports="$(awk '/^[[:space:]]*Port[[:space:]]+[0-9]+/ {print $2}' "$SSHD_CONF" 2>/dev/null | sort -un | tr '\n' ' ')"
+    [ -n "${ports// /}" ] || ports="22 "
+    echo "$ports"
+}
 
 ssh_reload() {
     sshd -t 2>/dev/null || { err "sshd_config is invalid - not restarting."; sshd -t; return 1; }

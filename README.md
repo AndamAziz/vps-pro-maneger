@@ -8,11 +8,13 @@ All-in-one VPS manager for Debian / Ubuntu: **Xray (VLESS-Reality, VLESS, VMess,
 bash <(curl -fsSL https://raw.githubusercontent.com/AndamAziz/vps-pro-maneger/main/install.sh)
 ```
 
-Fully automatic (BBR + Xray Reality + VMess-WS + first user, prints links):
+**Everything, unattended** (tuning + Fail2ban + Xray WS 443/80 + Reality + Hysteria2 + WireGuard + OpenVPN + Squid + UDPGW + firewall, then prints your links):
 
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/AndamAziz/vps-pro-maneger/main/install.sh) --quick myuser
+bash <(curl -fsSL https://raw.githubusercontent.com/AndamAziz/vps-pro-maneger/main/install.sh) --full --user myuser --domain vpn.example.com
 ```
+
+`--domain` is optional (A record must already point at the server; without it port 443 uses a self-signed certificate). The run is idempotent: a failing step is reported and the rest continues, so after fixing the cause you can simply run `vpsmanager full-setup myuser vpn.example.com` again.
 
 Then open the menu any time with `vpsmanager` (or `menu`). Re-running the installer (or *System → Update*) upgrades to the latest version.
 
@@ -46,7 +48,10 @@ vpsmanager xray add reality 443 "" www.microsoft.com
 vpsmanager xray add vless-ws 8443 cdn.example.com /ws
 vpsmanager xray add trojan 2053 example.com
 vpsmanager xray add ss2022 8388
-vpsmanager hy2 install
+vpsmanager hy2 install [port] [domain|-]
+vpsmanager full-setup myuser vpn.example.com   # everything, unattended
+vpsmanager xray test                          # check every WS path on 443 and 80
+vpsmanager fail2ban && vpsmanager tune        # SSH brute-force protection, conntrack/limits
 vpsmanager wg add phone               # prints config + QR
 vpsmanager ovpn add laptop            # → /etc/vps-manager/openvpn/laptop.ovpn
 vpsmanager ssh add bob 30 'pass' 2    # SSH account, 30 days, max 2 logins

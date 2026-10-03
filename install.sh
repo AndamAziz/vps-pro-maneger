@@ -6,7 +6,11 @@
 #
 # Options:
 #   --branch NAME     install a different branch (default: main)
-#   --quick [USER]    run the one-click setup right after installing
+#   --full            install and harden EVERYTHING unattended (all protocols,
+#                     Fail2ban, BBR, firewall) right after installing
+#   --user NAME       first VPN user for --full (default: admin)
+#   --domain D        domain for SSL on 443 with --full (A record must point here)
+#   --quick [USER]    same as --full
 #   --no-menu         do not open the menu when finished
 #==============================================================================
 set -e
@@ -14,14 +18,17 @@ set -e
 REPO="${VPSM_REPO:-AndamAziz/vps-pro-maneger}"
 BRANCH="main"
 HOME_DIR="/opt/vps-manager-pro"
-QUICK=0; QUICK_USER="admin"; OPEN_MENU=1
+QUICK=0; QUICK_USER="admin"; QUICK_DOMAIN=""; OPEN_MENU=1
 
 while [ $# -gt 0 ]; do
     case "$1" in
         --branch)  BRANCH="$2"; shift 2 ;;
+        --full)    QUICK=1; OPEN_MENU=0; shift ;;
+        --user)    QUICK_USER="$2"; shift 2 ;;
+        --domain)  QUICK_DOMAIN="$2"; shift 2 ;;
         --quick)   QUICK=1; OPEN_MENU=0; if [ -n "${2:-}" ] && [[ "$2" != --* ]]; then QUICK_USER="$2"; shift; fi; shift ;;
         --no-menu) OPEN_MENU=0; shift ;;
-        -h|--help) sed -n '2,13p' "$0"; exit 0 ;;
+        -h|--help) sed -n '2,19p' "$0"; exit 0 ;;
         *) echo "Unknown option: $1" >&2; exit 1 ;;
     esac
 done
@@ -83,7 +90,7 @@ echo -e "  Open the menu any time with: ${Y}vpsmanager${N}   (or just ${Y}menu${
 echo ""
 
 if [ "$QUICK" -eq 1 ]; then
-    exec "$HOME_DIR/vpsmanager" quick-setup "$QUICK_USER"
+    exec "$HOME_DIR/vpsmanager" full-setup "$QUICK_USER" "$QUICK_DOMAIN"
 elif [ "$OPEN_MENU" -eq 1 ] && [ -r /dev/tty ]; then
     exec "$HOME_DIR/vpsmanager" </dev/tty
 fi

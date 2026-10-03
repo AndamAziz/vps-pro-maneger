@@ -10,13 +10,25 @@ HY2_SVC="hysteria-server"
 
 hy2_installed() { [ -x "$HY2_BIN" ]; }
 
+# shellcheck disable=SC2120  # arguments are passed from the vpsmanager CLI / full_setup
+# hy2_install [PORT] [DOMAIN|-] [obfs]   (no arguments = interactive; '-' = self-signed certificate)
 hy2_install() {
     require_root
     need_cmd curl; need_cmd openssl
-    local port domain obfs=""
-    port="$(ask_port "Hysteria2 (UDP)" 443 udp)" || return 1
-    domain="$(ask "Domain for automatic Let's Encrypt (empty = self-signed)" "$(setting_get domain)")"
-    if confirm "Enable Salamander obfuscation (helps against QUIC blocking)?" n; then obfs="$(rand_str 16)"; fi
+    local port="${1:-}" domain="" obfs=""
+    if [ -n "$port" ]; then
+        valid_port "$port" || { err "Invalid port."; return 1; }
+        port_in_use "$port" udp && { err "UDP port $port is already in use."; return 1; }
+    else
+        port="$(ask_port "Hysteria2 (UDP)" 443 udp)" || return 1
+    fi
+    if [ $# -ge 2 ]; then
+        domain="$2"; [ "$domain" = "-" ] && domain=""
+    else
+        domain="$(ask "Domain for automatic Let's Encrypt (empty = self-signed)" "$(setting_get domain)")"
+    fi
+    if [ "${3:-}" = obfs ]; then obfs="$(rand_str 16)"
+    elif [ $# -lt 3 ] && confirm "Enable Salamander obfuscation (helps against QUIC blocking)?" n; then obfs="$(rand_str 16)"; fi
 
     info "Installing Hysteria 2 (official installer)..."
     local script

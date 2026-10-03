@@ -18,6 +18,8 @@ jobs:
         run: shellcheck -x -S warning install.sh uninstall.sh vpsmanager lib/*.sh
       - name: Offline config tests
         run: bash tests/test_config.sh
+      - name: Full-setup logic tests
+        run: bash tests/test_full_setup.sh
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"

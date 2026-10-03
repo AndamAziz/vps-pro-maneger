@@ -132,17 +132,25 @@ sys_swap() {
 fw_enable() {
     require_root
     pkg_install ufw || return 1
-    local p
-    for p in $(ssh_current_ports); do ufw allow "$p/tcp" >/dev/null; done
+    local p port type kv sshports
+    sshports="$(ssh_current_ports)"
+    for p in $sshports; do ufw allow "$p/tcp" >/dev/null 2>&1; done
     # open everything the manager has configured
-    [ -s "$XRAY_INB" ] && jq -r '.[] | . as $i | [$i.port, ($i.plain_port // empty)] | .[] | "\(.) \($i.type)"' "$XRAY_INB" | while read -r port type; do
-        [ "$type" = ss2022 ] && ufw allow "$port" >/dev/null || ufw allow "$port/tcp" >/dev/null; done
+    if [ -s "$XRAY_INB" ]; then
+        while read -r port type; do
+            if [ "$type" = ss2022 ]; then ufw allow "$port" >/dev/null 2>&1; else ufw allow "$port/tcp" >/dev/null 2>&1; fi
+        done < <(jq -r '.[] | . as $i | [$i.port, ($i.plain_port // empty)] | .[] | "\(.) \($i.type)"' "$XRAY_INB")
+    fi
     for kv in hy2_port:udp wg_port:udp ovpn_port:"$(setting_get ovpn_proto)" squid_port:tcp; do
         p="$(setting_get "${kv%%:*}")"; [ -n "$p" ] && ufw allow "$p/${kv#*:}" >/dev/null 2>&1
     done
-    ufw allow 80/tcp >/dev/null
-    ufw default deny incoming >/dev/null; ufw default allow outgoing >/dev/null
-    ufw --force enable >/dev/null && ok "Firewall enabled (SSH + configured services allowed)"
+    ufw allow 80/tcp >/dev/null 2>&1
+    # safety: refuse to turn the firewall on if SSH is not in the allowed set (would lock you out)
+    for p in $sshports; do
+        ufw show added 2>/dev/null | grep -Eq "allow ($p|$p/tcp)\b" || { err "SSH port $p is not allowed in ufw - NOT enabling the firewall."; return 1; }
+    done
+    ufw default deny incoming >/dev/null 2>&1; ufw default allow outgoing >/dev/null 2>&1
+    ufw --force enable >/dev/null 2>&1 && ok "Firewall enabled (SSH $sshports+ configured services allowed)"
 }
 
 fw_menu() {
@@ -169,18 +177,31 @@ fw_menu() {
 
 sys_fail2ban() {
     require_root
-    pkg_install fail2ban || return 1
+    pkg_install fail2ban python3-systemd || return 1
+    local ports
+    ports="$(ssh_current_ports | xargs | tr ' ' ',')"
+    mkdir -p /etc/fail2ban/jail.d
     cat > /etc/fail2ban/jail.d/vpsm.local <<EOF
 [sshd]
 enabled = true
-port = $(ssh_current_ports | tr ' ' ',' | sed 's/,$//')
+port = $ports
 maxretry = 5
 findtime = 10m
 bantime = 1h
 backend = systemd
 EOF
-    systemctl enable --now fail2ban >/dev/null 2>&1; systemctl restart fail2ban
-    ok "Fail2ban active for SSH (5 failures → 1 hour ban)"
+    systemctl enable fail2ban >/dev/null 2>&1; systemctl restart fail2ban 2>/dev/null
+    for _ in 1 2 3 4 5 6 7 8 9 10; do
+        fail2ban-client ping >/dev/null 2>&1 && break
+        sleep 1
+    done
+    if fail2ban-client status sshd >/dev/null 2>&1; then
+        ok "Fail2ban active for SSH port(s) $ports (5 failures → 1 hour ban)"
+        return 0
+    fi
+    err "Fail2ban did not start:"
+    journalctl -u fail2ban -n 8 --no-pager 2>/dev/null | sed 's/^/    /'
+    return 1
 }
 
 sys_update_os() {
@@ -239,18 +260,82 @@ sys_self_update() {
 
 #---- one-click ------------------------------------------------------------------------------
 
-quick_setup() {
-    require_root
-    info "One-click setup: BBR + Xray (Reality + VMess-WS) + Hysteria2 + first user"
-    sys_enable_bbr
-    xray_installed || xray_install || return 1
-    xray_inbound_exists reality-443 || xray_add_inbound reality 443 "" "www.microsoft.com"
-    xray_inbound_exists vmess-ws-8080 || xray_add_inbound vmess-ws 8080 "" "/$(rand_str 8)"
-    local first; first="${1:-admin}"
-    user_exists "$first" || user_add "$first" 0
-    apply_all
-    echo -e "$LINE"; user_show "$first"
+# ---- full unattended setup -------------------------------------------------------------
+FULL_OK=(); FULL_FAIL=()
+run_step() { # run_step "label" cmd [args...]   - a failing step is reported, the rest still runs
+    local label="$1"; shift
+    echo -e "\n${BOLD}${CYAN}▶ $label${NC}"
+    if "$@"; then FULL_OK+=("$label"); else FULL_FAIL+=("$label"); warn "Step failed: $label (continuing)"; fi
 }
+
+_f_tune()   { sys_enable_bbr; sys_tune; }
+_f_swap()   { local ram; ram="$(free -m | awk '/^Mem:/{print $2}')"
+              if [ "${ram:-9999}" -lt 2048 ] && ! swapon --show | grep -q .; then sys_swap; else ok "swap not needed / already present"; fi; }
+_f_xray()   { xray_installed || xray_install; }
+_f_ws()     { xray_inbound_exists multi-ws-443 || xray_add_inbound multi-ws 443 "$FULL_DOMAIN" 80; }
+_f_reality(){ xray_inbound_exists reality-8443 || xray_add_inbound reality 8443 "" "www.microsoft.com"; }
+_f_hy2()    { hy2_installed && { ok "Hysteria 2 already installed"; return 0; }; hy2_install 443 -; }
+_f_wg()     { wg_installed && { ok "WireGuard already installed"; return 0; }; wg_install; }
+_f_ovpn()   { ovpn_installed && { ok "OpenVPN already installed"; return 0; }; ovpn_install; }
+_f_squid()  { squid_installed && { ok "Squid already installed"; squid_apply; return; }; squid_install 8080; }
+_f_udpgw()  { [ -x "$UDPGW_BIN" ] && svc_active "$UDPGW_SVC" && { ok "UDPGW already running"; return 0; }; udpgw_install 7300; }
+_f_user()   { user_exists "$FULL_USER" && { ok "user '$FULL_USER' already exists"; return 0; }; user_add "$FULL_USER" 0; }
+_f_apply()  { apply_all; }
+
+# full_setup [first-user] [domain]  - installs and hardens everything, unattended and idempotent
+full_setup() {
+    require_root
+    export VPSM_NONINTERACTIVE=1
+    FULL_USER="${1:-admin}"; FULL_DOMAIN="${2:-}"; FULL_OK=(); FULL_FAIL=()
+    valid_name "$FULL_USER" || { err "Invalid user name."; return 1; }
+    info "Full setup: tuning, security, Xray (WS 443+80, Reality), Hysteria2, WireGuard, OpenVPN, Squid, UDPGW"
+
+    run_step "System tuning (BBR, limits, conntrack)" _f_tune
+    run_step "Swap (small servers)"                   _f_swap
+    run_step "Fail2ban (SSH brute-force protection)"  sys_fail2ban
+    run_step "First user '$FULL_USER'"                _f_user
+    if [ -n "$FULL_DOMAIN" ]; then
+        if ssl_have_le "$FULL_DOMAIN"; then ok "certificate for $FULL_DOMAIN already present"
+        else
+            run_step "SSL certificate for $FULL_DOMAIN" ssl_issue "$FULL_DOMAIN"
+            if ! ssl_have_le "$FULL_DOMAIN"; then
+                warn "No certificate yet - continuing with a self-signed one on 443."
+                warn "When DNS points here: vpsmanager ssl issue $FULL_DOMAIN && vpsmanager xray del multi-ws-443 && vpsmanager xray add multi-ws 443 $FULL_DOMAIN 80"
+                FULL_DOMAIN=""
+            fi
+        fi
+    fi
+    run_step "Xray-core"                              _f_xray
+    run_step "Xray: VLESS/VMess/Trojan/SS over WebSocket on 443 (SSL) + 80"  _f_ws
+    run_step "Xray: VLESS + Reality on 8443"          _f_reality
+    run_step "Hysteria 2 (UDP 443)"                   _f_hy2
+    run_step "WireGuard (UDP 51820)"                  _f_wg
+    run_step "OpenVPN (UDP 1194)"                     _f_ovpn
+    run_step "Squid HTTP proxy (8080, open)"          _f_squid
+    run_step "BadVPN UDPGW (7300)"                    _f_udpgw
+    run_step "Apply users to all protocols"           _f_apply
+    run_step "Firewall (ufw)"                         fw_enable
+
+    echo -e "\n$LINE"
+    echo -e "${BOLD}Summary${NC}"
+    local x
+    for x in "${FULL_OK[@]}";   do echo -e "  ${GREEN}✔${NC} $x"; done
+    for x in "${FULL_FAIL[@]}"; do echo -e "  ${RED}✖${NC} $x"; done
+    echo -e "$LINE"
+    if [ "${#FULL_FAIL[@]}" -gt 0 ]; then
+        warn "${#FULL_FAIL[@]} step(s) failed. Fix the cause shown above and run again - installed parts are skipped:  vpsmanager full-setup $FULL_USER ${FULL_DOMAIN}"
+    else
+        ok "Everything installed."
+    fi
+    echo ""; user_show "$FULL_USER"
+    echo -e "$LINE"; sys_ports
+    echo ""
+    echo -e "  WireGuard client : ${BOLD}vpsmanager wg add <name>${NC}     OpenVPN client : ${BOLD}vpsmanager ovpn add <name>${NC}"
+    echo -e "  Check WebSocket  : ${BOLD}vpsmanager xray test${NC}          Restrict Squid : ${BOLD}vpsmanager squid ip <your-IP>${NC}"
+    [ "${#FULL_FAIL[@]}" -eq 0 ]
+}
+
+quick_setup() { full_setup "$@"; }
 
 #---- menu ------------------------------------------------------------------------------------
 
