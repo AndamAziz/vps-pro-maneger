@@ -132,12 +132,14 @@ wg_show_client() {
     cat "$f"; echo ""; show_qr "$(cat "$f")"
 }
 
-# _fw_deltas BEFORE AFTER
+# _fw_deltas BEFORE AFTER [ALWAYS_REGEX]
 # Prints "<packets>\t<rule>" for every iptables rule / chain policy whose packet counter grew between two
 # `iptables-save -c` snapshots, biggest first. Shows which rule actually handled (e.g. DROPPED) some traffic.
+# Rules matching ALWAYS_REGEX are listed even if their counter did not move (delta 0): "the allow rule for
+# this port counted nothing" is as important as "a DROP rule counted everything".
 _fw_deltas() {
-    awk '
-        function parse(line,   a, k, n) {
+    awk -v always="${3:-}" '
+        function parse(line,   a, f, k, n) {
             if (line ~ /^\[[0-9]+:[0-9]+\] /) {                       # rule:  [pkts:bytes] -A CHAIN ...
                 n = index(line, "] "); k = substr(line, n + 2); split(substr(line, 2, n - 2), a, ":")
                 KEY = k; CNT = a[1]; return 1 }
@@ -146,7 +148,8 @@ _fw_deltas() {
                 KEY = "policy " substr(f[1], 2) " " f[2]; CNT = a[2]; return 1 }
             return 0 }
         FNR == NR { if (parse($0)) before[KEY] = CNT; next }
-        { if (parse($0)) { d = CNT - before[KEY]; if (d > 0) print d "\t" KEY } }
+        { if (parse($0)) { d = CNT - before[KEY]
+                           if (d > 0 || (always != "" && KEY ~ always)) print d "\t" KEY } }
     ' "$1" "$2" | sort -rn
 }
 
@@ -158,7 +161,7 @@ _fw_deltas() {
 #   3. the peers' handshake times
 wg_debug() {
     local secs="${1:-40}" ctl="${WG_DEBUG_CTL:-/sys/kernel/debug/dynamic_debug/control}" mark log
-    local port ip tmp arrived answered inits sizes left kdbg=1 now ifc pk ts hs oldcost fwd
+    local port ip tmp arrived answered inits sizes left kdbg=1 now ifc pk ts hs oldcost fwd wrule wcount
     [[ "$secs" =~ ^[0-9]+$ ]] && [ "$secs" -ge 5 ] && [ "$secs" -le 300 ] || { err "Seconds must be 5-300."; return 1; }
     [ -n "$(wg show interfaces 2>/dev/null)" ] || { err "No WireGuard interface is up."; return 1; }
     need_cmd tcpdump || return 1
@@ -184,7 +187,10 @@ wg_debug() {
     [ "$kdbg" = 1 ] && echo 'module wireguard -p' > "$ctl" 2>/dev/null
     iptables-save -c > "$tmp/fw_after" 2>/dev/null
     [ -n "$oldcost" ] && sysctl -qw net.core.message_cost="$oldcost" 2>/dev/null
-    fwd="$(_fw_deltas "$tmp/fw_before" "$tmp/fw_after" 2>/dev/null | grep -Ei 'udp|INVALID|DROP|REJECT|policy' | head -6)"
+    local alld; alld="$(_fw_deltas "$tmp/fw_before" "$tmp/fw_after" "udp.* --dport ${port}( |\$)" 2>/dev/null)"
+    wrule="$(grep -E "udp.* --dport ${port}( |\$)" <<<"$alld" | head -3)"                 # the allow rule(s) for the WireGuard port
+    fwd="$(grep -Ei 'INVALID|DROP|REJECT|policy' <<<"$alld" | head -4)"                   # what dropped things meanwhile
+    wcount="$(head -1 <<<"$wrule" | cut -f1)"
 
     arrived="$(_cap_count "$tmp/in")"; answered="$(_cap_count "$tmp/out")"; arrived="${arrived:-0}"; answered="${answered:-0}"
     inits="$(grep -cE 'length 148$' "$tmp/in" 2>/dev/null || true)"; inits="${inits:-0}"
@@ -195,8 +201,10 @@ wg_debug() {
     echo "  packets that reached the server : $arrived   ${sizes:+(sizes: $sizes)}"
     echo "  packets the server sent back    : $answered"
     echo "  handshake initiations (148 B)   : $inits"
-    echo -e "\n${BOLD}Firewall rules that counted packets during the test${NC}  (packets, rule)"
-    if [ -n "$fwd" ]; then echo "$fwd" | awk -F'\t' '{printf "  %7s  %s\n", $1, $2}'; else echo "  (none)"; fi
+    echo -e "\n${BOLD}Firewall: the allow rule for UDP $port${NC}  (packets it counted during the test, rule)"
+    if [ -n "$wrule" ]; then echo "$wrule" | awk -F'\t' '{printf "  %7s  %s\n", $1, $2}'; else echo "  (no iptables rule mentions UDP $port - nothing allows it)"; fi
+    echo -e "${BOLD}Firewall: what dropped packets meanwhile${NC}"
+    if [ -n "$fwd" ]; then echo "$fwd" | awk -F'\t' '{printf "  %7s  %s\n", $1, $2}'; else echo "  (nothing)"; fi
     echo -e "\n${BOLD}Kernel messages${NC}"
     if [ -n "$log" ]; then echo "$log" | sed 's/^/  /'
     elif [ "$kdbg" = 0 ]; then echo "  (kernel debugging is not available on this server - rely on the network numbers above)"
@@ -222,8 +230,15 @@ wg_debug() {
         elif [ "$answered" -gt 0 ] || grep -q "Sending handshake response" <<<"$log"; then
             ok "...and the server ANSWERED ($answered packet(s)). If the app still shows no handshake, the answer does not get back to the phone (this network drops UDP replies from that port - try another port)."
         else
-            err "...but the server sent NOTHING back and the kernel logged nothing: WireGuard probably never SAW them. Look at the firewall list above - a DROP/INVALID/policy line counting about $inits packets is the culprit (tcpdump sees packets BEFORE the firewall)."
-            echo "    If no firewall line explains it, the cause is a key mismatch: delete the tunnel in the app and import a FRESH config (vpsmanager wg add <new-name>)."
+            if [ ! -s "$tmp/fw_after" ]; then
+                err "...and I could not read the firewall rules (iptables-save returned nothing), so I cannot tell a firewall drop from a key mismatch. Check: iptables -nvL | grep $port ; nft list ruleset | grep $port"
+            elif [ -z "$wrule" ]; then
+                err "...but NO firewall rule allows UDP $port: the firewall drops them. Allow it:  ufw allow $port/udp"
+            elif [ "${wcount:-0}" -ge "$inits" ]; then
+                err "...the firewall ACCEPTED them (allow rule counted $wcount) but WireGuard did not answer. Since it silently drops handshakes it cannot verify, this is a KEY mismatch (or the interface is not the one bound to UDP $port). Delete the tunnel in the app and import a FRESH config: vpsmanager wg add <new-name>"
+            else
+                err "...but the UDP $port allow rule counted only ${wcount:-0} of $inits packets: something EARLIER in the firewall drops them before they reach it (see 'what dropped packets meanwhile' above)."
+            fi
         fi
     fi
     rm -rf "$tmp"
