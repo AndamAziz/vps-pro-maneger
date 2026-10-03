@@ -6,7 +6,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 TMP="$(mktemp -d)"; PIDS=""
 trap 'for p in $PIDS; do kill "$p" 2>/dev/null; done; rm -rf "$TMP"' EXIT
 export VPSM_ETC="$TMP/etc" VPSM_LOG_DIR="$TMP/log" VPSM_BACKUP_DIR="$TMP/bak" VPSM_NONINTERACTIVE=1
-for f in common users ssl xray; do . "$ROOT/lib/$f.sh"; done
+for f in common users ssl xray ssh; do . "$ROOT/lib/$f.sh"; done
 db_init; setting_set public_ip 203.0.113.7
 fail=0
 check() { if eval "$2"; then echo "ok   - $1"; else echo "FAIL - $1"; fail=1; fi; }
@@ -61,6 +61,15 @@ out="$(talk 'CONNECT 127.0.0.1:22 HTTP/1.1\r\nHost: x\r\n\r\n')"
 check "CONNECT → 200 Connection established + tunnel" 'grep -q "200 Connection established" <<<"$out" && grep -q SSH-2.0 <<<"$out"'
 out="$(talk 'garbage')"
 check "garbage without header end is dropped quietly" '[ -z "$out" ]'
+
+# --- the built-in self-test (vpsmanager ssh ws test) against the same proxy
+sshws_installed() { return 0; }; sshws_behind_xray() { return 1; }; sshws_host() { echo ssl.andam.uk; }
+setting_set sshws_listen "127.0.0.1:$WSP"
+out="$(sshws_test 2>&1)"
+check "ssh ws test reports 101 + SSH banner"        'grep -q "101 Switching Protocols + SSH banner" <<<"$out"'
+setting_set sshws_listen "127.0.0.1:$((WSP + 7))"
+out="$(sshws_test 2>&1)"
+check "ssh ws test reports a dead port as an error" 'grep -q "unexpected answer" <<<"$out"'
 
 # --- Xray: SSH-WS becomes the DEFAULT fallback (no path) of BOTH the 443 TLS and 80 plain inbounds
 echo '[]' > "$XRAY_INB"; XRAY_BIN=/bin/true

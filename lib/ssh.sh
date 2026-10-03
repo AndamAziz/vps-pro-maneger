@@ -234,7 +234,16 @@ sshws_test() {
     if sshws_behind_xray; then ports="$(jq -r '.[]|select(.type=="multi-ws")|.plain_port' "$XRAY_INB" | head -1)"
     else ports="$(setting_get sshws_listen | sed 's/.*://')"; fi
     for p in $ports; do
-        out="$(timeout 5 bash -c 'exec 3<>/dev/tcp/127.0.0.1/$1; printf "GET / HTTP/1.1\r\nHost: $2\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\r\n" >&3; timeout 2 cat <&3' _ "$p" "$host" 2>/dev/null | tr -d '\r')"
+        out="$(python3 -c '
+import socket, sys, time
+try:
+    s = socket.create_connection(("127.0.0.1", int(sys.argv[1])), timeout=4)
+    s.sendall(("GET / HTTP/1.1\r\nHost: %s\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\r\n" % sys.argv[2]).encode())
+    time.sleep(1); s.settimeout(2)
+    sys.stdout.write(s.recv(400).decode("latin-1").replace("\r", ""))
+except Exception:
+    pass
+' "$p" "$host" 2>/dev/null)"
         if grep -q "101 Switching Protocols" <<<"$out" && grep -q "SSH-2.0" <<<"$out"; then ok "port $p: 101 Switching Protocols + SSH banner"
         else err "port $p: unexpected answer: $(head -1 <<<"$out")"; fi
     done
